@@ -1,1 +1,2 @@
-%%MAGIT_PARSER_PROTECT%%text requests suncalc paho-mqtt pytz %%MAGIT_PARSER_PROTECT%%
+requests
+paho-mqtt==1.6.1
