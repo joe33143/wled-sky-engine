@@ -4,6 +4,9 @@ on:
     - cron: '*/10 * * * *' # Automatically runs every 10 minutes
   workflow_dispatch: # Allows you to manually trigger execution with a button
 
+env:
+  ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true # Bypasses the Node 24 runtime enforcement error
+
 jobs:
   run-script:
     runs-on: ubuntu-latest
