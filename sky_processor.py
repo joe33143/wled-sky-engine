@@ -15,7 +15,7 @@ AIO_KEY = os.getenv("AIO_KEY")
 # FIXED: Correct Adafruit IO broker URL
 MQTT_BROKER = "io.adafruit.com"
 MQTT_PORT = 1883
-MQTT_TOPIC = f"{AIO_USERNAME}/feeds/wled-sky/api"
+MQTT_TOPIC = f"{AIO_USERNAME}/feeds/wled-sky"
 
 LAT = 25.3176                     
 LON = 83.0062                     
