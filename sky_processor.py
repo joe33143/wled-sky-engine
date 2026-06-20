@@ -64,17 +64,15 @@ def main():
     turbidity = get_realtime_turbidity()
     rgb = calculate_sky_rgb(turbidity)
     
-    wled_payload = {
-        "api": {
-            "on": True,
-            "bri": 255,
-            "seg": [{
-                "id": 1,
-                "start": 0,
-                "stop": 90,
-                "col": [rgb]
-            }]
-        }
+wled_payload = {
+        "on": True,
+        "bri": 255,
+        "seg": [{
+            "id": 1,
+            "start": 0,
+            "stop": 90,
+            "col": [rgb] 
+        }]
     }
 
     # FIXED: Syntax matches the paho-mqtt==1.6.1 library requirement
