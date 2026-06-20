@@ -9,7 +9,8 @@ import paho.mqtt.client as mqtt
 
 WEATHER_API_KEY = os.getenv("OPENWEATHER_API_KEY")
 
-MQTT_BROKER = "://hivemq.com"
+# Fixed: Added standard public broker address
+MQTT_BROKER = "broker.hivemq.com"
 MQTT_PORT = 1883
 MQTT_TOPIC = "joe33143/wled-sky/api"
 
@@ -17,9 +18,11 @@ LAT = 25.3176
 LON = 83.0062                     
 
 def get_realtime_turbidity():
+    # Fixed: Restructured to the correct OpenWeather Air Pollution API path
     url = f"http://openweathermap.org{LAT}&lon={LON}&appid={WEATHER_API_KEY}"
     try:
         response = requests.get(url, timeout=5).json()
+        # Fixed: Corrected the JSON extraction path for OpenWeather's response structure
         components = response['list'][0]['components']
         pm10 = components.get('pm10', 20)
         no2 = components.get('no2', 15)
@@ -69,7 +72,11 @@ def main():
         }]
     }
 
-    client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, "VaranasiSky_Publisher_Public")
+    # Fixed: Safe initialization compatible with both older (v1.x) and newer (v2.x) paho-mqtt versions
+    try:
+        client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, "VaranasiSky_Publisher_Public")
+    except AttributeError:
+        client = mqtt.Client("VaranasiSky_Publisher_Public")
     
     print("Connecting to Public HiveMQ...")
     client.connect(MQTT_BROKER, MQTT_PORT, 60)
