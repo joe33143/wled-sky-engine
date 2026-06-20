@@ -31,10 +31,10 @@ jobs:
         env:
           OPENWEATHER_API_KEY: ${{ secrets.OPENWEATHER_API_KEY }}
         run: |
-          # Overwrite the broken broker assignment completely with a working address
-          sed -i 's|^[[:space:]]*MQTT_BROKER[[:space:]]*=.*|    MQTT_BROKER = "broker.hivemq.com"|g' sky_processor.py
+          # Fixed: Replaces global broker line with NO leading spaces to prevent IndentationError
+          sed -i 's|^[[:space:]]*MQTT_BROKER[[:space:]]*=.*|MQTT_BROKER = "broker.hivemq.com"|g' sky_processor.py
           
-          # Overwrite the broken url variable completely with the correct API endpoint path
+          # Keeps proper 8 spaces indentation because this url variable is inside a python function
           sed -i 's|^[[:space:]]*url[[:space:]]*=.*|        url = f"http://openweathermap.org{LAT}\&lon={LON}\&appid={WEATHER_API_KEY}"|g' sky_processor.py
           
           python sky_processor.py
