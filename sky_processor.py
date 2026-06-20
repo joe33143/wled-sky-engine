@@ -12,20 +12,19 @@ WEATHER_API_KEY = os.getenv("OPENWEATHER_API_KEY")
 AIO_USERNAME = os.getenv("AIO_USERNAME")
 AIO_KEY = os.getenv("AIO_KEY")
 
-# FIXED: Correct Adafruit IO broker URL
 MQTT_BROKER = "io.adafruit.com"
 MQTT_PORT = 1883
-MQTT_TOPIC = f"{AIO_USERNAME}/feeds/wled-sky"
+
+# FIXED: Appended /api to the topic so WLED can parse the color JSON
+MQTT_TOPIC = f"{AIO_USERNAME}/feeds/wled-sky/api"
 
 LAT = 25.3176                     
 LON = 83.0062                     
 
 def get_realtime_turbidity():
-    # FIXED: Correct OpenWeather Air Pollution API endpoint
     url = f"http://api.openweathermap.org/data/2.5/air_pollution?lat={LAT}&lon={LON}&appid={WEATHER_API_KEY}"
     try:
         response = requests.get(url, timeout=5).json()
-        # FIXED: Added [0] index to properly access the array
         components = response['list'][0]['components']
         pm10 = components.get('pm10', 20)
         no2 = components.get('no2', 15)
@@ -64,7 +63,8 @@ def main():
     turbidity = get_realtime_turbidity()
     rgb = calculate_sky_rgb(turbidity)
     
-wled_payload = {
+    # FIXED: Indentation is now perfectly aligned inside the main() function
+    wled_payload = {
         "on": True,
         "bri": 255,
         "seg": [{
@@ -75,7 +75,6 @@ wled_payload = {
         }]
     }
 
-    # FIXED: Syntax matches the paho-mqtt==1.6.1 library requirement
     client = mqtt.Client(f"VaranasiSky_{AIO_USERNAME}")
     client.username_pw_set(AIO_USERNAME, AIO_KEY)
     
