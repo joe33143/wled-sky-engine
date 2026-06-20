@@ -1,4 +1,4 @@
-yamlname: Sync Varanasi Sky via MQTT
+name: Sync Varanasi Sky via MQTT
 on:
   schedule:
     - cron: '*/10 * * * *' # Automatically runs every 10 minutes
