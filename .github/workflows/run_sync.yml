@@ -1,31 +1,9 @@
-name: Sync Varanasi Sky via MQTT
-on:
-  schedule:
-    - cron: '*/10 * * * *' # Automatically runs every 10 minutes
-  workflow_dispatch: # Allows you to manually trigger execution with a button
-
-env:
-  ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true # Bypasses the Node 24 runtime enforcement error
-
-jobs:
-  run-script:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
-          cache: 'pip'
-
-      - name: Install Dependencies
-        run: |
-          pip install -r requirements.txt
-
-      - name: Run Atmospheric Engine
-        env:
-          env:
-          OPENWEATHER_API_KEY: ${{ secrets.OPENWEATHER_API_KEY }}
-        run: python sky_processor.py
+- name: Run Sky Processor
+  env:
+    OPENWEATHER_API_KEY: ${{ secrets.OPENWEATHER_API_KEY }}
+    MQTT_BROKER: "broker.hivemq.com" 
+  run: |
+    # Forcefully patch the broken URL string directly inside the runner before it executes
+    sed -i 's|http://openweathermap.org{LAT}|http://openweathermap.org{LAT}|g' sky_processor.py
+    sed -i 's|://hivemq.com|broker.hivemq.com|g' sky_processor.py
+    python sky_processor.py
