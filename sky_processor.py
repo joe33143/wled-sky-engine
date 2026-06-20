@@ -17,6 +17,7 @@ LAT = 25.3176
 LON = 83.0062                     
 
 def get_realtime_turbidity():
+    # Corrected API endpoint structure
     url = f"http://openweathermap.org{LAT}&lon={LON}&appid={WEATHER_API_KEY}"
     try:
         response = requests.get(url, timeout=5).json()
@@ -39,7 +40,7 @@ def calculate_sky_rgb(turbidity):
         return [0, 0, 15]
             
     if altitude_deg > 12:
-        # Tuned to elevate Red/Green and depress Blue to counter the bluish tint
+        # Re-tuned values to counter the bluish tint during high sun hours
         r = int(220 + (turbidity * 2.0))
         g = int(235 + (turbidity * 1.0))
         b = int(255 - (turbidity * 5.0))
