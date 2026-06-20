@@ -1,4 +1,4 @@
-pythonimport os
+import os
 import math
 import requests
 import json
@@ -69,9 +69,9 @@ def main():
         }]
     }
 
-    client = mqtt.Client("VaranasiSky_Publisher_Public")
+    client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, "VaranasiSky_Publisher_Public")
     
-    print(f"Connecting to Public HiveMQ...")
+    print("Connecting to Public HiveMQ...")
     client.connect(MQTT_BROKER, MQTT_PORT, 60)
     client.loop_start()
     
