@@ -67,7 +67,12 @@ def main():
     wled_payload = {
         "on": True,
         "bri": 255,
-        "seg": [{"col": [rgb, [0,0,0], [0,0,0]]}] 
+        "seg": [{
+            "id": 1,
+            "start": 0,
+            "stop": 90,
+            "col": [rgb, [0, 0, 0], [0, 0, 0]]
+        }] 
     }
     
     # FIXED: Syntax matches the paho-mqtt==1.6.1 library requirement
