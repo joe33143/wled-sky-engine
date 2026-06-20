@@ -10,7 +10,7 @@ from suncalc import get_position
 import paho.mqtt.client as mqtt
     
     # --- ONLY ONE SECRET NEEDED NOW ---
-    WEATHER_API_KEY = os.getenv("OPENWEATHER_API_KEY")
+WEATHER_API_KEY = os.getenv("OPENWEATHER_API_KEY")
     
     # Public HiveMQ Broker
     MQTT_BROKER = "://hivemq.com"
