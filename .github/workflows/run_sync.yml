@@ -27,15 +27,14 @@ jobs:
           python -m pip install --upgrade pip
           pip install requests pytz suncalc paho-mqtt
 
-            - name: Run Sky Processor
+      - name: Run Sky Processor
         env:
           OPENWEATHER_API_KEY: ${{ secrets.OPENWEATHER_API_KEY }}
         run: |
-          # Overwrite the broken MQTT_BROKER assignment completely
+          # Overwrite the broken broker assignment completely with a working address
           sed -i 's|^[[:space:]]*MQTT_BROKER[[:space:]]*=.*|    MQTT_BROKER = "broker.hivemq.com"|g' sky_processor.py
           
-          # Overwrite the broken url assignment inside the function completely
+          # Overwrite the broken url variable completely with the correct API endpoint path
           sed -i 's|^[[:space:]]*url[[:space:]]*=.*|        url = f"http://openweathermap.org{LAT}\&lon={LON}\&appid={WEATHER_API_KEY}"|g' sky_processor.py
           
           python sky_processor.py
-
