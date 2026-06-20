@@ -1,4 +1,4 @@
-name: Sync Varanasi Sky via Adafruit IO
+name: Sync Varanasi Sky via MQTT
 on:
   schedule:
     - cron: '*/10 * * * *' # Automatically runs every 10 minutes
@@ -27,6 +27,7 @@ jobs:
       - name: Run Atmospheric Engine
         env:
           OPENWEATHER_API_KEY: ${{ secrets.OPENWEATHER_API_KEY }}
-          AIO_USERNAME: ${{ secrets.AIO_USERNAME }}
-          AIO_KEY: ${{ secrets.AIO_KEY }}
+          HIVEMQ_HOST: ${{ secrets.HIVEMQ_HOST }}
+          HIVEMQ_USERNAME: ${{ secrets.HIVEMQ_USERNAME }}
+          HIVEMQ_PASSWORD: ${{ secrets.HIVEMQ_PASSWORD }}
         run: python sky_processor.py
