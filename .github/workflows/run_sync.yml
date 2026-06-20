@@ -31,7 +31,7 @@ jobs:
         env:
           OPENWEATHER_API_KEY: ${{ secrets.OPENWEATHER_API_KEY }}
         run: |
-          # 1. FORCE EXTRACT: Write out the clean script to disk
+          # 1. FORCE EXTRACT: Write out the clean script to disk with no leading spaces
           cat << 'EOF' > sky_processor.py
           import os
           import math
@@ -43,22 +43,37 @@ jobs:
           import paho.mqtt.client as mqtt
 
           WEATHER_API_KEY = os.getenv("OPENWEATHER_API_KEY")
+
           MQTT_BROKER = "://hivemq.com"
           MQTT_PORT = 1883
           MQTT_TOPIC = "joe33143/wled-sky/api"
+
           LAT = 25.3176                     
           LON = 83.0062                     
 
-          def get_weather_metrics():
-              url = f"http://openweathermap.org{LAT}&lon={LON}&appid={WEATHER_API_KEY}"
-              clouds = 0
+          def get_weather_and_turbidity():
+              pollution_url = f"http://openweathermap.org{LAT}&lon={LON}&appid={WEATHER_API_KEY}"
+              weather_url = f"http://openweathermap.org{LAT}&lon={LON}&appid={WEATHER_API_KEY}"
+              turbidity = 5.0
+              clouds = 0  
+              
               try:
-                  res = requests.get(url, timeout=5).json()
-                  clouds = res.get('clouds', {}).get('all', 0)
-                  print(f"Weather metrics synced -> Real-time Clouds: {clouds}%")
+                  res = requests.get(pollution_url, timeout=5).json()
+                  components = res['list']['components']
+                  pm10 = components.get('pm10', 20)
+                  no2 = components.get('no2', 15)
+                  turbidity = min(15.0, max(2.0, 2.0 + (pm10 / 12.0) + (no2 / 8.0)))
               except Exception as e:
-                  print(f"Weather API fetch failed: {e}")
-              return clouds
+                  print(f"Air Pollution API error: {e}")
+
+              try:
+                  res = requests.get(weather_url, timeout=5).json()
+                  clouds = res.get('clouds', {}).get('all', 0)
+                  print(f"Current weather metrics -> Clouds: {clouds}%, Dust Turbidity: {turbidity:.2f}")
+              except Exception as e:
+                  print(f"Weather API error: {e}")
+                  
+              return turbidity, clouds
 
           def calculate_moon_phase():
               now = datetime.now(pytz.utc)
@@ -68,44 +83,52 @@ jobs:
               phase_days = diff.total_seconds() / 86400.0 % synodic_month
               normalized_phase = phase_days / synodic_month
               if normalized_phase <= 0.5:
-                  illumination = normalized_phase * 2.0
-              else:
-                  illumination = (1.0 - normalized_phase) * 2.0
-              return illumination
+                  return normalized_phase * 2.0
+              return (1.0 - normalized_phase) * 2.0
 
-          def calculate_sky_state(clouds):
+          def calculate_sky_state(turbidity, clouds):
               now = datetime.now(pytz.utc)
               pos = get_position(now, LON, LAT)
               altitude_deg = math.degrees(pos['altitude'])
               
               if altitude_deg <= -6:
                   moon_factor = calculate_moon_phase()
-                  print(f"Night state active -> Calculated Moon Illumination: {moon_factor:.2f}")
+                  print(f"Night active -> Moon Phase Illumination: {moon_factor:.2f}")
+                  
                   if moon_factor < 0.15:
                       return "TRIGGER_NIGHT_PRESET", 255
+                  
                   if clouds > 30:
                       moon_factor *= (1.0 - ((clouds - 30) / 70.0) * 0.5)
+                      
                   r = int(5 + (moon_factor * 25))
                   g = int(10 + (moon_factor * 30))
                   b = int(25 + (moon_factor * 45))
                   night_bri = int(40 + (moon_factor * 60))
-                  return [r, g, b], night_bri
+                  return [max(0, min(255, x)) for x in (r, g, b)], night_bri
                       
               if altitude_deg > 12:
-                  r, g, b = 255, 242, 195
+                  r = 255
+                  g = int(240 + (turbidity * 1.0))
+                  b = int(200 - (turbidity * 3.0))
+                  
                   if clouds > 25:
-                      f = (clouds - 25) / 75.0
-                      r = int(r * (1.0 - (f * 0.25)))
-                      g = int(g * (1.0 - (f * 0.20)))
-                      b = int(b * (1.0 - (f * 0.10)))
+                      cloud_factor = (clouds - 25) / 75.0  
+                      r = int(r * (1.0 - (cloud_factor * 0.25)))
+                      g = int(g * (1.0 - (cloud_factor * 0.20)))
+                      b = int(b * (1.0 - (cloud_factor * 0.10)))  
                   return [max(0, min(255, x)) for x in (r, g, b)], 255
               else:
                   factor = (altitude_deg + 6) / 18.0  
                   r = 255
-                  g = int(80 + (factor * 110))
-                  b = int(20 + (factor * 40))
+                  g = int(80 + (factor * 110) + (turbidity * 4))
+                  b = int(20 + (factor * 40) - (turbidity * 2))
+                  
                   if clouds > 50:
-                      r, g, b = int(r * 0.7), int(g * 0.6), int(b * 0.6)
+                      r = int(r * 0.7)
+                      g = int(g * 0.6)
+                      b = int(b * 0.6)
+                      
                   return [max(0, min(255, x)) for x in (r, g, b)], 200
 
           def main():
@@ -113,20 +136,20 @@ jobs:
                   print("Error: Missing OpenWeather API Key.")
                   return
 
-              clouds = get_weather_metrics()
-              target_color, master_brightness = calculate_sky_state(clouds)
+              turbidity, clouds = get_weather_and_turbidity()
+              target_state, master_brightness = calculate_sky_state(turbidity, clouds)
               
-              if target_color == "TRIGGER_NIGHT_PRESET":
-                  print("Low-light night reached. Reading dark_night_preset.json layout...")
+              if target_state == "TRIGGER_NIGHT_PRESET":
+                  print("Dark night reached. Pulling custom profile dark_night_preset.json...")
                   try:
                       with open("dark_night_preset.json", "r") as f:
                           wled_payload = json.load(f)
-                      print("Successfully compiled payload from dark_night_preset.json")
+                      print("Successfully loaded layout parameters from GitHub preset file.")
                   except Exception as e:
-                      print(f"Failed to parse dark_night_preset.json. Applying safe dim fallback... Error: {e}")
+                      print(f"Preset file reading missed, loading safe fallback layout. Error: {e}")
                       wled_payload = {
-                          "on": True, 
-                          "bri": 30, 
+                          "on": True,
+                          "bri": 30,
                           "seg": [{"id": 1, "start": 0, "stop": 90, "col": []}]
                       }
               else:
@@ -137,7 +160,7 @@ jobs:
                           "id": 1,
                           "start": 0,
                           "stop": 90,
-                          "col": [target_color] 
+                          "col": [target_state] 
                       }]
                   }
 
@@ -146,25 +169,24 @@ jobs:
               except AttributeError:
                   client = mqtt.Client("VaranasiSky_Publisher_Public")
               
+              print("Connecting to Public HiveMQ...")
               try:
                   client.connect(MQTT_BROKER, MQTT_PORT, 60)
                   client.loop_start()
-                  print(f"Sending payload to WLED: {wled_payload}")
-                  client.publish(MQTT_TOPIC, json.dumps(wled_payload), qos=1).wait_for_publish() 
+                  
+                  print(f"Publishing payload to topic {MQTT_TOPIC}...")
+                  info = client.publish(MQTT_TOPIC, json.dumps(wled_payload), qos=1)
+                  info.wait_for_publish() 
+                  
                   client.loop_stop()
                   client.disconnect()
-                  print("Data successfully synced.")
+                  print("Data sync operation finished successfully.")
               except Exception as e:
-                  print(f"MQTT dispatch failed: {e}")
+                  print(f"MQTT Operation failed: {e}")
 
           if __name__ == "__main__":
               main()
           EOF
           
-          # 2. HARD OVERWRITE SAFETY NET: Wipes out the persistent cached broken strings on disk if they exist
-          sed -i 's|http://openweathermap.org{LAT}|http://openweathermap.org25.3176\&lon=83.0062\&appid='"$OPENWEATHER_API_KEY"'|g' sky_processor.py
-          sed -i 's|openweathermap.org25.3176\&lon=83.0062|api.openweathermap.org/data/2.5/weather?lat=25.3176\&lon=83.0062|g' sky_processor.py
-          sed -i 's|://hivemq.com|://hivemq.com|g' sky_processor.py
-          
-          # 3. RUN CLEAN ENGINE
+          # 2. RUN CLEAN ENGINE
           python sky_processor.py
