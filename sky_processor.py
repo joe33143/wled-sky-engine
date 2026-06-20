@@ -65,16 +65,18 @@ def main():
     rgb = calculate_sky_rgb(turbidity)
     
     wled_payload = {
-        "on": True,
-        "bri": 255,
-        "seg": [{
-            "id": 1,
-            "start": 0,
-            "stop": 90,
-            "col": [rgb, [0, 0, 0], [0, 0, 0]]
-        }] 
+        "api": {
+            "on": True,
+            "bri": 255,
+            "seg": [{
+                "id": 1,
+                "start": 0,
+                "stop": 90,
+                "col": [rgb]
+            }]
+        }
     }
-    
+
     # FIXED: Syntax matches the paho-mqtt==1.6.1 library requirement
     client = mqtt.Client(f"VaranasiSky_{AIO_USERNAME}")
     client.username_pw_set(AIO_USERNAME, AIO_KEY)
