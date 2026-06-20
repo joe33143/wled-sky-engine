@@ -9,8 +9,8 @@ import paho.mqtt.client as mqtt
 
 WEATHER_API_KEY = os.getenv("OPENWEATHER_API_KEY")
 
-# Safe fallback broker used if the original malformed string is present
-MQTT_BROKER = "://hivemq.com"
+# Fixed: Proper MQTT Broker URL without needing sed replacements
+MQTT_BROKER = "broker.hivemq.com"
 MQTT_PORT = 1883
 MQTT_TOPIC = "joe33143/wled-sky/api"
 
@@ -18,11 +18,11 @@ LAT = 25.3176
 LON = 83.0062                     
 
 def get_realtime_turbidity():
-    # Enforced correct URL structure inside the function execution block
-    url = f"http://openweathermap.org{LAT}&lon={LON}&appid={WEATHER_API_KEY}"
+    # Fixed: Standard 4-space indentation and corrected the OpenWeather API endpoint
+    url = f"http://api.openweathermap.org/data/2.5/air_pollution?lat={LAT}&lon={LON}&appid={WEATHER_API_KEY}"
     try:
         response = requests.get(url, timeout=5).json()
-        components = response['list']['components']
+        components = response['list'][0]['components'] # Note: 'list' usually contains an array in this API
         pm10 = components.get('pm10', 20)
         no2 = components.get('no2', 15)
         
