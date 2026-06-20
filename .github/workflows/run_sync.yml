@@ -6,7 +6,7 @@ on:
       - main
   schedule:
     # Runs automatically every 15 minutes to keep your WLED colors synced with the sun
-    - cron: '*/15 * * * *'
+    - cron: '*/5 * * * *'
   workflow_dispatch: # Allows you to trigger it manually via the GitHub Actions tab
 
 jobs:
@@ -31,7 +31,7 @@ jobs:
         env:
           OPENWEATHER_API_KEY: ${{ secrets.OPENWEATHER_API_KEY }}
         run: |
-          # Forcefully overwrite sky_processor.py with the cloud-aware and color-balanced engine
+          # Write out the clean script with zero leading block indentation to prevent runtime string issues
           cat << 'EOF' > sky_processor.py
           import os
           import math
@@ -43,17 +43,15 @@ jobs:
           import paho.mqtt.client as mqtt
 
           WEATHER_API_KEY = os.getenv("OPENWEATHER_API_KEY")
-          MQTT_BROKER = "://hivemq.com"
+          MQTT_BROKER = "broker.hivemq.com"
           MQTT_PORT = 1883
           MQTT_TOPIC = "joe33143/wled-sky/api"
           LAT = 25.3176                     
           LON = 83.0062                     
 
           def get_weather_and_turbidity():
-              """Fetches both air quality/pollution and cloud coverage values."""
               pollution_url = f"http://openweathermap.org{LAT}&lon={LON}&appid={WEATHER_API_KEY}"
               weather_url = f"http://openweathermap.org{LAT}&lon={LON}&appid={WEATHER_API_KEY}"
-              
               turbidity = 5.0
               clouds = 0
               
@@ -81,23 +79,19 @@ jobs:
               altitude_deg = math.degrees(pos['altitude'])
               
               if altitude_deg <= -6:
-                  return [0, 0, 15] # Fixed nighttime fallback color
+                  return [0, 0, 15]
                       
               if altitude_deg > 12:
-                  # Anti-blue hardware calibration balance
-                  # Lowers Blue channel to counter the cool white native LEDs
                   r = 255
                   g = int(240 + (turbidity * 1.0))
                   b = int(200 - (turbidity * 3.0))
                   
-                  # Dynamic cloud scaling
                   if clouds > 25:
                       cloud_factor = (clouds - 25) / 75.0
                       r = int(r * (1.0 - (cloud_factor * 0.25)))
                       g = int(g * (1.0 - (cloud_factor * 0.20)))
-                      b = int(b * (1.0 - (cloud_factor * 0.10))) # Keeps blue higher to give grey look
+                      b = int(b * (1.0 - (cloud_factor * 0.10)))
               else:
-                  # Golden hour behavior
                   factor = (altitude_deg + 6) / 18.0  
                   r = 255
                   g = int(80 + (factor * 110) + (turbidity * 4))
