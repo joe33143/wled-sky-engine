@@ -1,4 +1,33 @@
-- name: Run Sky Processor
+name: WLED Sky Engine Sync
+
+on:
+  push:
+    branches:
+      - main
+  schedule:
+    # Runs automatically every 5 minutes to keep your WLED colors synced with the sun
+    - cron: '*/5 * * * *'
+  workflow_dispatch: # Allows you to trigger it manually via the GitHub Actions tab
+
+jobs:
+  sync-sky:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests pytz suncalc paho-mqtt
+
+      - name: Run Sky Processor
         env:
           OPENWEATHER_API_KEY: ${{ secrets.OPENWEATHER_API_KEY }}
         run: |
@@ -145,4 +174,19 @@
                   client.connect(MQTT_BROKER, MQTT_PORT, 60)
                   client.loop_start()
                   
-                  print(f"Publishing payload to topic {MQTT
+                  print(f"Publishing payload to topic {MQTT_TOPIC}...")
+                  info = client.publish(MQTT_TOPIC, json.dumps(wled_payload), qos=1)
+                  info.wait_for_publish() 
+                  
+                  client.loop_stop()
+                  client.disconnect()
+                  print("Data sync operation finished successfully.")
+              except Exception as e:
+                  print(f"MQTT Operation failed: {e}")
+
+          if __name__ == "__main__":
+              main()
+          EOF
+          
+          # 2. RUN CLEAN ENGINE
+          python sky_processor.py
