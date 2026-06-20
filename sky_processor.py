@@ -2,23 +2,17 @@ import os
 import math
 import requests
 import json
-import ssl
 from datetime import datetime
 import pytz
 from suncalc import get_position
 import paho.mqtt.client as mqtt
 
-# --- ENVIRONMENT VARIABLES FROM GITHUB SECRETS ---
+# --- ONLY ONE SECRET NEEDED NOW ---
 WEATHER_API_KEY = os.getenv("OPENWEATHER_API_KEY")
 
-# New HiveMQ Secrets (We will set these up next)
-HIVEMQ_HOST = os.getenv("HIVEMQ_HOST")         
-HIVEMQ_USERNAME = os.getenv("HIVEMQ_USERNAME")
-HIVEMQ_PASSWORD = os.getenv("HIVEMQ_PASSWORD")
-
-# HiveMQ Cloud strictly uses Port 8883 for secure connections
-MQTT_PORT = 8883
-# Clean, simple topic! No groups required.
+# Public HiveMQ Broker (URL is only 17 characters, fits WLED perfectly)
+MQTT_BROKER = "broker.hivemq.com"
+MQTT_PORT = 1883
 MQTT_TOPIC = "joe33143/wled-sky/api"
 
 LAT = 25.3176                     
@@ -58,8 +52,8 @@ def calculate_sky_rgb(turbidity):
     return [max(0, min(255, x)) for x in (r, g, b)]
 
 def main():
-    if not WEATHER_API_KEY or not HIVEMQ_HOST or not HIVEMQ_USERNAME or not HIVEMQ_PASSWORD:
-        print("Error: Missing required environment secrets. Did you add the HiveMQ ones to GitHub?")
+    if not WEATHER_API_KEY:
+        print("Error: Missing OpenWeather API Key.")
         return
 
     turbidity = get_realtime_turbidity()
@@ -76,14 +70,10 @@ def main():
         }]
     }
 
-    client = mqtt.Client(f"VaranasiSky_Publisher_{HIVEMQ_USERNAME}")
-    client.username_pw_set(HIVEMQ_USERNAME, HIVEMQ_PASSWORD)
+    client = mqtt.Client("VaranasiSky_Publisher_Public")
     
-    # REQUIRED FOR HIVEMQ CLOUD: Enable SSL/TLS encryption
-    client.tls_set(tls_version=ssl.PROTOCOL_TLS_CLIENT)
-    
-    print(f"Connecting to HiveMQ Cloud...")
-    client.connect(HIVEMQ_HOST, MQTT_PORT, 60)
+    print(f"Connecting to Public HiveMQ...")
+    client.connect(MQTT_BROKER, MQTT_PORT, 60)
     client.loop_start()
     
     print(f"Publishing to topic: {MQTT_TOPIC}")
