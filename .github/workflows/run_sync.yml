@@ -26,8 +26,6 @@ jobs:
 
       - name: Run Atmospheric Engine
         env:
+          env:
           OPENWEATHER_API_KEY: ${{ secrets.OPENWEATHER_API_KEY }}
-          HIVEMQ_HOST: ${{ secrets.HIVEMQ_HOST }}
-          HIVEMQ_USERNAME: ${{ secrets.HIVEMQ_USERNAME }}
-          HIVEMQ_PASSWORD: ${{ secrets.HIVEMQ_PASSWORD }}
         run: python sky_processor.py
