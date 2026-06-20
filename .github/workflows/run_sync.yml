@@ -26,5 +26,6 @@ jobs:
 
       - name: Run Atmospheric Engine
         env:
+          env:
           OPENWEATHER_API_KEY: ${{ secrets.OPENWEATHER_API_KEY }}
         run: python sky_processor.py
