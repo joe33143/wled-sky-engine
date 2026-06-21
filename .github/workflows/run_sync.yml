@@ -109,25 +109,29 @@ jobs:
                       
               if altitude_deg > 12:
                   r = 255
-                  g = int(240 + (turbidity * 1.0))
-                  b = int(200 - (turbidity * 3.0))
+                  g = 178  # Locked to 5000K baseline
+                  b = 125  # Locked to 5000K baseline
                   
                   if clouds > 25:
+                      # FIX: Uses a single multiplier to dim R, G, and B equally. 
+                      # This guarantees the color ratio (and the 5000K temp) never shifts when it gets cloudy.
                       cloud_factor = (clouds - 25) / 75.0  
-                      r = int(r * (1.0 - (cloud_factor * 0.25)))
-                      g = int(g * (1.0 - (cloud_factor * 0.20)))
-                      b = int(b * (1.0 - (cloud_factor * 0.10)))  
+                      dim_multiplier = 1.0 - (cloud_factor * 0.30)
+                      r = int(r * dim_multiplier)
+                      g = int(g * dim_multiplier)
+                      b = int(b * dim_multiplier)  
                   return [max(0, min(255, x)) for x in (r, g, b)], 255
               else:
                   factor = (altitude_deg + 6) / 18.0  
                   r = 255
-                  g = int(80 + (factor * 110) + (turbidity * 4))
-                  b = int(20 + (factor * 40) - (turbidity * 2))
+                  g = int(80 + (factor * 98) + (turbidity * 2))  
+                  b = int(20 + (factor * 105) - (turbidity * 1)) 
                   
                   if clouds > 50:
+                      # FIX: Locked the twilight cloud dimming ratio as well
                       r = int(r * 0.7)
-                      g = int(g * 0.6)
-                      b = int(b * 0.6)
+                      g = int(g * 0.7)
+                      b = int(b * 0.7)
                       
                   return [max(0, min(255, x)) for x in (r, g, b)], 200
 
@@ -150,7 +154,7 @@ jobs:
                       wled_payload = {
                           "on": True,
                           "bri": 30,
-                          "seg": [{"id": 1, "start": 0, "stop": 90, "col": []}]
+                          "seg": [{"id": 1, "start": 0, "stop": 90, "col": [[255, 178, 125]]}]
                       }
               else:
                   wled_payload = {
