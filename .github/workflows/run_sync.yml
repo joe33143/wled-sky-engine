@@ -91,6 +91,11 @@ jobs:
               pos = get_position(now, LON, LAT)
               altitude_deg = math.degrees(pos['altitude'])
               
+              # Variables to hold raw engine output
+              r, g, b = 0, 0, 0
+              brightness = 255 
+              
+              # --- 1. NIGHTTIME ---
               if altitude_deg <= -6:
                   moon_factor = calculate_moon_phase()
                   print(f"Night active -> Moon Phase Illumination: {moon_factor:.2f}")
@@ -104,36 +109,51 @@ jobs:
                   r = int(5 + (moon_factor * 25))
                   g = int(10 + (moon_factor * 30))
                   b = int(25 + (moon_factor * 45))
-                  night_bri = int(40 + (moon_factor * 60))
-                  return [max(0, min(255, x)) for x in (r, g, b)], night_bri
+                  brightness = int(40 + (moon_factor * 60))
                       
-              if altitude_deg > 12:
+              # --- 2. DAYTIME BALANCED ENGINE ---
+              elif altitude_deg > 12:
                   r = 255
-                  g = 178  # Locked to 5000K baseline
-                  b = 125  # Locked to 5000K baseline
+                  g = int(240 + (turbidity * 1.0))
+                  b = int(200 - (turbidity * 3.0))
                   
                   if clouds > 25:
-                      # FIX: Uses a single multiplier to dim R, G, and B equally. 
-                      # This guarantees the color ratio (and the 5000K temp) never shifts when it gets cloudy.
                       cloud_factor = (clouds - 25) / 75.0  
-                      dim_multiplier = 1.0 - (cloud_factor * 0.30)
-                      r = int(r * dim_multiplier)
-                      g = int(g * dim_multiplier)
-                      b = int(b * dim_multiplier)  
-                  return [max(0, min(255, x)) for x in (r, g, b)], 255
+                      r = int(r * (1.0 - (cloud_factor * 0.25)))
+                      g = int(g * (1.0 - (cloud_factor * 0.20)))
+                      b = int(b * (1.0 - (cloud_factor * 0.10)))  
+                  brightness = 255
+              
+              # --- 3. TWILIGHT / SUNSET ---
               else:
                   factor = (altitude_deg + 6) / 18.0  
                   r = 255
-                  g = int(80 + (factor * 98) + (turbidity * 2))  
-                  b = int(20 + (factor * 105) - (turbidity * 1)) 
+                  g = int(80 + (factor * 110) + (turbidity * 4))
+                  b = int(20 + (factor * 40) - (turbidity * 2)) 
                   
                   if clouds > 50:
-                      # FIX: Locked the twilight cloud dimming ratio as well
                       r = int(r * 0.7)
-                      g = int(g * 0.7)
-                      b = int(b * 0.7)
-                      
-                  return [max(0, min(255, x)) for x in (r, g, b)], 200
+                      g = int(g * 0.6)
+                      b = int(b * 0.6)
+                  brightness = 200
+
+              # ==========================================
+              # HARDWARE CALIBRATION (White Balance Scale)
+              # ==========================================
+              # Clamp raw values first
+              raw_r = max(0, min(255, r))
+              raw_g = max(0, min(255, g))
+              raw_b = max(0, min(255, b))
+              
+              # Your physical strip's target for pure white
+              cal_r, cal_g, cal_b = 255, 178, 125
+              
+              # Scale the raw engine output against your hardware values
+              final_r = int(raw_r * (cal_r / 255.0))
+              final_g = int(raw_g * (cal_g / 255.0))
+              final_b = int(raw_b * (cal_b / 255.0))
+              
+              return [final_r, final_g, final_b], brightness
 
           def main():
               if not WEATHER_API_KEY:
