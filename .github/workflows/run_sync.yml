@@ -5,9 +5,8 @@ on:
     branches:
       - main
   schedule:
-    # Runs automatically every 5 minutes to keep your WLED colors synced with the sun
     - cron: '*/10 * * * *'
-  workflow_dispatch: # Allows you to trigger it manually via the GitHub Actions tab
+  workflow_dispatch: 
 
 jobs:
   sync-sky:
@@ -31,7 +30,6 @@ jobs:
         env:
           OPENWEATHER_API_KEY: ${{ secrets.OPENWEATHER_API_KEY }}
         run: |
-          # 1. FORCE EXTRACT: Write out the clean script to disk with no leading spaces
           cat << 'EOF' > sky_processor.py
           import os
           import math
@@ -91,7 +89,6 @@ jobs:
               pos = get_position(now, LON, LAT)
               altitude_deg = math.degrees(pos['altitude'])
               
-              # Variables to hold raw engine output
               r, g, b = 0, 0, 0
               brightness = 255 
               
@@ -117,12 +114,22 @@ jobs:
                   g = int(240 + (turbidity * 1.0))
                   b = int(200 - (turbidity * 3.0))
                   
+                  brightness = 255
+                  
+                  # 1. Dim for Clouds
                   if clouds > 25:
                       cloud_factor = (clouds - 25) / 75.0  
                       r = int(r * (1.0 - (cloud_factor * 0.25)))
                       g = int(g * (1.0 - (cloud_factor * 0.20)))
                       b = int(b * (1.0 - (cloud_factor * 0.10)))  
-                  brightness = 255
+                      # Drop the master slider up to 40% for heavy clouds
+                      brightness = int(brightness * (1.0 - (cloud_factor * 0.40)))
+                  
+                  # 2. Dim for Haze/Smog (Turbidity)
+                  if turbidity > 5.0:
+                      turb_factor = min(1.0, (turbidity - 5.0) / 10.0)
+                      # Drop the master slider up to 30% for high AQI
+                      brightness = int(brightness * (1.0 - (turb_factor * 0.30)))
               
               # --- 3. TWILIGHT / SUNSET ---
               else:
@@ -131,29 +138,32 @@ jobs:
                   g = int(80 + (factor * 110) + (turbidity * 4))
                   b = int(20 + (factor * 40) - (turbidity * 2)) 
                   
+                  brightness = 200 
+                  
                   if clouds > 50:
                       r = int(r * 0.7)
                       g = int(g * 0.6)
                       b = int(b * 0.6)
-                  brightness = 200
+                      brightness = int(brightness * 0.7)
+                      
+                  if turbidity > 5.0:
+                      turb_factor = min(1.0, (turbidity - 5.0) / 10.0)
+                      brightness = int(brightness * (1.0 - (turb_factor * 0.30)))
 
               # ==========================================
               # HARDWARE CALIBRATION (White Balance Scale)
               # ==========================================
-              # Clamp raw values first
               raw_r = max(0, min(255, r))
               raw_g = max(0, min(255, g))
               raw_b = max(0, min(255, b))
               
-              # Your physical strip's target for pure white
               cal_r, cal_g, cal_b = 255, 178, 125
               
-              # Scale the raw engine output against your hardware values
               final_r = int(raw_r * (cal_r / 255.0))
               final_g = int(raw_g * (cal_g / 255.0))
               final_b = int(raw_b * (cal_b / 255.0))
               
-              return [final_r, final_g, final_b], brightness
+              return [final_r, final_g, final_b], max(10, int(brightness))
 
           def main():
               if not WEATHER_API_KEY:
@@ -212,5 +222,5 @@ jobs:
               main()
           EOF
           
-          # 2. RUN CLEAN ENGINE
           python sky_processor.py
+          
