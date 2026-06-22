@@ -90,7 +90,7 @@ jobs:
               altitude_deg = math.degrees(pos['altitude'])
               
               r, g, b = 0, 0, 0
-              brightness = 255 
+              base_brightness = 255 
               
               # --- 1. NIGHTTIME ---
               if altitude_deg <= -6:
@@ -106,49 +106,32 @@ jobs:
                   r = int(5 + (moon_factor * 25))
                   g = int(10 + (moon_factor * 30))
                   b = int(25 + (moon_factor * 45))
-                  brightness = int(40 + (moon_factor * 60))
+                  base_brightness = int(40 + (moon_factor * 60))
                       
               # --- 2. DAYTIME BALANCED ENGINE ---
               elif altitude_deg > 12:
                   r = 255
                   g = int(240 + (turbidity * 1.0))
                   b = int(200 - (turbidity * 3.0))
-                  
-                  brightness = 255
-                  
-                  # 1. Dim for Clouds
-                  if clouds > 25:
-                      cloud_factor = (clouds - 25) / 75.0  
-                      r = int(r * (1.0 - (cloud_factor * 0.25)))
-                      g = int(g * (1.0 - (cloud_factor * 0.20)))
-                      b = int(b * (1.0 - (cloud_factor * 0.10)))  
-                      # Drop the master slider up to 40% for heavy clouds
-                      brightness = int(brightness * (1.0 - (cloud_factor * 0.40)))
-                  
-                  # 2. Dim for Haze/Smog (Turbidity)
-                  if turbidity > 5.0:
-                      turb_factor = min(1.0, (turbidity - 5.0) / 10.0)
-                      # Drop the master slider up to 30% for high AQI
-                      brightness = int(brightness * (1.0 - (turb_factor * 0.30)))
+                  base_brightness = 255
               
               # --- 3. TWILIGHT / SUNSET ---
               else:
                   factor = (altitude_deg + 6) / 18.0  
-                  r = 255
+                  # FIX 1: Red now ramps smoothly from 150 to 255 based on the sun
+                  r = int(150 + (factor * 105))
                   g = int(80 + (factor * 110) + (turbidity * 4))
                   b = int(20 + (factor * 40) - (turbidity * 2)) 
-                  
-                  brightness = 200 
-                  
-                  if clouds > 50:
-                      r = int(r * 0.7)
-                      g = int(g * 0.6)
-                      b = int(b * 0.6)
-                      brightness = int(brightness * 0.7)
-                      
-                  if turbidity > 5.0:
-                      turb_factor = min(1.0, (turbidity - 5.0) / 10.0)
-                      brightness = int(brightness * (1.0 - (turb_factor * 0.30)))
+                  base_brightness = int(150 + (factor * 105))
+
+              # --- 4. CONTINUOUS WEATHER DIMMING ---
+              # FIX 2: Replaced arbitrary cliffs with smooth dimming curves
+              if altitude_deg > -6:
+                  cloud_dim = max(0.4, 1.0 - (clouds / 150.0))       
+                  turb_dim = max(0.5, 1.0 - (max(0, turbidity - 2.0) / 20.0)) 
+                  final_brightness = int(base_brightness * cloud_dim * turb_dim)
+              else:
+                  final_brightness = base_brightness
 
               # ==========================================
               # HARDWARE CALIBRATION (White Balance Scale)
@@ -163,7 +146,7 @@ jobs:
               final_g = int(raw_g * (cal_g / 255.0))
               final_b = int(raw_b * (cal_b / 255.0))
               
-              return [final_r, final_g, final_b], max(10, int(brightness))
+              return [final_r, final_g, final_b], max(10, min(255, final_brightness))
 
           def main():
               if not WEATHER_API_KEY:
