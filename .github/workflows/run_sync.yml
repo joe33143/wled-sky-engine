@@ -5,9 +5,9 @@ on:
     branches:
       - main
   schedule:
-    # Runs automatically every 5 minutes to keep your WLED colors synced with the sun
+    # Runs automatically every 10 minutes to keep your WLED colors synced with the sun
     - cron: '*/10 * * * *'
-  workflow_dispatch: # Allows you to trigger it manually via the GitHub Actions tab
+  workflow_dispatch: 
 
 jobs:
   sync-sky:
@@ -31,7 +31,6 @@ jobs:
         env:
           OPENWEATHER_API_KEY: ${{ secrets.OPENWEATHER_API_KEY }}
         run: |
-          # 1. FORCE EXTRACT: Write out the clean script to disk with no leading spaces
           cat << 'EOF' > sky_processor.py
           import os
           import math
@@ -43,154 +42,69 @@ jobs:
           import paho.mqtt.client as mqtt
 
           WEATHER_API_KEY = os.getenv("OPENWEATHER_API_KEY")
-
           MQTT_BROKER = "broker.hivemq.com"
           MQTT_PORT = 1883
           MQTT_TOPIC = "joe33143/wled-sky/api"
-
-          LAT = 25.3176                     
-          LON = 83.0062                     
+          LAT, LON = 25.3176, 83.0062                     
 
           def get_weather_and_turbidity():
               pollution_url = f"http://api.openweathermap.org/data/2.5/air_pollution?lat={LAT}&lon={LON}&appid={WEATHER_API_KEY}"
               weather_url = f"http://api.openweathermap.org/data/2.5/weather?lat={LAT}&lon={LON}&appid={WEATHER_API_KEY}"
-              turbidity = 5.0
-              clouds = 0  
-              
+              turbidity, clouds = 5.0, 0
               try:
                   res = requests.get(pollution_url, timeout=5).json()
-                  components = res['list'][0]['components'] 
-                  pm10 = components.get('pm10', 20)
-                  no2 = components.get('no2', 15)
-                  turbidity = min(15.0, max(2.0, 2.0 + (pm10 / 12.0) + (no2 / 8.0)))
-              except Exception as e:
-                  print(f"Air Pollution API error: {e}")
-
+                  components = res['list'][0]['components']
+                  turbidity = min(15.0, max(2.0, 2.0 + (components.get('pm10', 20) / 12.0) + (components.get('no2', 15) / 8.0)))
+              except Exception as e: print(f"Pollution API error: {e}")
               try:
                   res = requests.get(weather_url, timeout=5).json()
                   clouds = res.get('clouds', {}).get('all', 0)
-                  print(f"Current weather metrics -> Clouds: {clouds}%, Dust Turbidity: {turbidity:.2f}")
-              except Exception as e:
-                  print(f"Weather API error: {e}")
-                  
+              except Exception as e: print(f"Weather API error: {e}")
               return turbidity, clouds
-
-          def calculate_moon_phase():
-              now = datetime.now(pytz.utc)
-              base_new_moon = datetime(2000, 1, 6, 18, 14, tzinfo=pytz.utc)
-              diff = now - base_new_moon
-              synodic_month = 29.530588853
-              phase_days = diff.total_seconds() / 86400.0 % synodic_month
-              normalized_phase = phase_days / synodic_month
-              if normalized_phase <= 0.5:
-                  return normalized_phase * 2.0
-              return (1.0 - normalized_phase) * 2.0
 
           def calculate_sky_state(turbidity, clouds):
               now = datetime.now(pytz.utc)
               pos = get_position(now, LON, LAT)
-              altitude_deg = math.degrees(pos['altitude'])
+              alt = math.degrees(pos['altitude'])
               
-              if altitude_deg <= -6:
-                  moon_factor = calculate_moon_phase()
-                  print(f"Night active -> Moon Phase Illumination: {moon_factor:.2f}")
-                  
-                  if moon_factor < 0.15:
-                      return "TRIGGER_NIGHT_PRESET", 255
-                  
-                  if clouds > 30:
-                      moon_factor *= (1.0 - ((clouds - 30) / 70.0) * 0.5)
-                      
-                  r = int(5 + (moon_factor * 25))
-                  g = int(10 + (moon_factor * 30))
-                  b = int(25 + (moon_factor * 45))
-                  night_bri = int(40 + (moon_factor * 60))
-                  return [max(0, min(255, x)) for x in (r, g, b)], night_bri
-                      
-              if altitude_deg > 12:
-                  r = 255
-                  g = 178  # Locked to 5000K baseline
-                  b = 125  # Locked to 5000K baseline
-                  
-                  if clouds > 25:
-                      # FIX: Uses a single multiplier to dim R, G, and B equally. 
-                      # This guarantees the color ratio (and the 5000K temp) never shifts when it gets cloudy.
-                      cloud_factor = (clouds - 25) / 75.0  
-                      dim_multiplier = 1.0 - (cloud_factor * 0.30)
-                      r = int(r * dim_multiplier)
-                      g = int(g * dim_multiplier)
-                      b = int(b * dim_multiplier)  
-                  return [max(0, min(255, x)) for x in (r, g, b)], 255
-              else:
-                  factor = (altitude_deg + 6) / 18.0  
-                  r = 255
-                  g = int(80 + (factor * 98) + (turbidity * 2))  
-                  b = int(20 + (factor * 105) - (turbidity * 1)) 
-                  
-                  if clouds > 50:
-                      # FIX: Locked the twilight cloud dimming ratio as well
-                      r = int(r * 0.7)
-                      g = int(g * 0.7)
-                      b = int(b * 0.7)
-                      
-                  return [max(0, min(255, x)) for x in (r, g, b)], 200
+              # Nighttime
+              if alt <= -6:
+                  return "TRIGGER_NIGHT_PRESET", 40
+              
+              # Daytime & Twilight (Locked 5000K Ratio)
+              # Normalize alt -2 to 12 into a 0.0 to 1.0 factor
+              factor = min(1.0, max(0.0, (alt + 2) / 14.0))
+              
+              # Base 5000K Temperature Color
+              r = int(150 + (factor * 105))
+              g = int(80 + (factor * 98))
+              b = int(20 + (factor * 105))
+              
+              # Uniform Weather Multiplier (Locks the Kelvin temperature)
+              turb_impact = 1.0 - max(0, (turbidity - 2.0) / 25.0)
+              cloud_impact = 1.0 - (clouds / 150.0)
+              mult = turb_impact * cloud_impact
+              
+              return [max(0, min(255, int(r * mult))), max(0, min(255, int(g * mult))), max(0, min(255, int(b * mult)))], 255
 
           def main():
-              if not WEATHER_API_KEY:
-                  print("Error: Missing OpenWeather API Key.")
-                  return
-
               turbidity, clouds = get_weather_and_turbidity()
-              target_state, master_brightness = calculate_sky_state(turbidity, clouds)
+              target, bri = calculate_sky_state(turbidity, clouds)
               
-              if target_state == "TRIGGER_NIGHT_PRESET":
-                  print("Dark night reached. Pulling custom profile dark_night_preset.json...")
+              if target == "TRIGGER_NIGHT_PRESET":
                   try:
-                      with open("dark_night_preset.json", "r") as f:
-                          wled_payload = json.load(f)
-                      print("Successfully loaded layout parameters from GitHub preset file.")
-                  except Exception as e:
-                      print(f"Preset file reading missed, loading safe fallback layout. Error: {e}")
-                      wled_payload = {
-                          "on": True,
-                          "bri": 30,
-                          "seg": [{"id": 1, "start": 0, "stop": 90, "col": [[255, 178, 125]]}]
-                      }
+                      with open("dark_night_preset.json", "r") as f: payload = json.load(f)
+                  except: payload = {"on": True, "bri": 30, "seg": [{"col": [[0, 0, 15]]}]}
               else:
-                  wled_payload = {
-                      "on": True,
-                      "bri": master_brightness,
-                      "seg": [{
-                          "id": 1,
-                          "start": 0,
-                          "stop": 90,
-                          "col": [target_state] 
-                      }]
-                  }
-
-              try:
-                  client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, "VaranasiSky_Publisher_Public")
-              except AttributeError:
-                  client = mqtt.Client("VaranasiSky_Publisher_Public")
+                  payload = {"on": True, "bri": bri, "seg": [{"id": 1, "col": [target]}]}
               
-              print("Connecting to Public HiveMQ...")
-              try:
-                  client.connect(MQTT_BROKER, MQTT_PORT, 60)
-                  client.loop_start()
-                  
-                  print(f"Publishing payload to topic {MQTT_TOPIC}...")
-                  info = client.publish(MQTT_TOPIC, json.dumps(wled_payload), qos=1)
-                  info.wait_for_publish() 
-                  
-                  client.loop_stop()
-                  client.disconnect()
-                  print("Data sync operation finished successfully.")
-              except Exception as e:
-                  print(f"MQTT Operation failed: {e}")
+              client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, "VaranasiSky_Publisher")
+              client.connect(MQTT_BROKER, MQTT_PORT, 60)
+              client.publish(MQTT_TOPIC, json.dumps(payload), qos=1)
+              client.disconnect()
 
           if __name__ == "__main__":
               main()
           EOF
-          
-          # 2. RUN CLEAN ENGINE
           python sky_processor.py
+          
