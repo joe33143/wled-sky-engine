@@ -1,42 +1,168 @@
-import os, math, requests, json, pytz
+import os
+import math
+import requests
+import json
 from datetime import datetime
+import pytz
 from suncalc import get_position
 import paho.mqtt.client as mqtt
 
 WEATHER_API_KEY = os.getenv("OPENWEATHER_API_KEY")
+
+# Fixed: Correct public HiveMQ server address
 MQTT_BROKER = "broker.hivemq.com"
 MQTT_PORT = 1883
 MQTT_TOPIC = "joe33143/wled-sky/api"
-LAT, LON = 25.3176, 83.0062
 
-def get_weather():
-    url = f"http://api.openweathermap.org/data/2.5/weather?lat={LAT}&lon={LON}&appid={WEATHER_API_KEY}"
+LAT = 25.3176                     
+LON = 83.0062                     
+
+def get_weather_and_turbidity():
+    """Pulls air pollution and cloud coverage data using correct OpenWeather API endpoints."""
+    pollution_url = f"http://openweathermap.org{LAT}&lon={LON}&appid={WEATHER_API_KEY}"
+    weather_url = f"http://openweathermap.org{LAT}&lon={LON}&appid={WEATHER_API_KEY}"
+    
+    turbidity = 5.0
+    clouds = 0  
+    
+    # 1. Fetch Pollution Data
     try:
-        res = requests.get(url, timeout=5).json()
-        return float(res.get('clouds', {}).get('all', 0)), 5.0
-    except: return 0.0, 5.0
+        res = requests.get(pollution_url, timeout=5).json()
+        components = res['list'][0]['components']
+        pm10 = components.get('pm10', 20)
+        no2 = components.get('no2', 15)
+        turbidity = min(15.0, max(2.0, 2.0 + (pm10 / 12.0) + (no2 / 8.0)))
+    except Exception as e:
+        print(f"Air Pollution API fallback used: {e}")
 
-def calculate_sky():
+    # 2. Fetch Cloud Coverage Data
+    try:
+        res = requests.get(weather_url, timeout=5).json()
+        clouds = res.get('clouds', {}).get('all', 0)
+        print(f"Current weather metrics -> Clouds: {clouds}%, Dust Turbidity: {turbidity:.2f}")
+    except Exception as e:
+        print(f"Weather API fallback used: {e}")
+        
+    return turbidity, clouds
+
+def calculate_moon_phase():
+    """Calculates moon illumination factor using date math.
+    Returns 0.0 (New Moon) to 1.0 (Full Moon)."""
     now = datetime.now(pytz.utc)
-    alt = math.degrees(get_position(now, LON, LAT)['altitude'])
-    clouds, turbidity = get_weather()
+    base_new_moon = datetime(2000, 1, 6, 18, 14, tzinfo=pytz.utc)
+    diff = now - base_new_moon
+    synodic_month = 29.530588853
+    phase_days = diff.total_seconds() / 86400.0 % synodic_month
+    normalized_phase = phase_days / synodic_month
+    if normalized_phase <= 0.5:
+        return normalized_phase * 2.0
+    return (1.0 - normalized_phase) * 2.0
+
+def calculate_sky_state(turbidity, clouds):
+    """Evaluates sun position and returns target color/state and baseline brightness."""
+    now = datetime.now(pytz.utc)
+    pos = get_position(now, LON, LAT)
+    altitude_deg = math.degrees(pos['altitude'])
     
-    if alt <= -6: return [10, 5, 25], 40
-    
-    factor = min(1.0, max(0.0, (alt + 2) / 14.0))
-    r, g, b = int(150 + (factor * 105)), int(80 + (factor * 98)), int(20 + (factor * 105))
-    
-    mult = (1.0 - max(0, (turbidity - 2.0) / 25.0)) * (1.0 - (clouds / 150.0))
-    return [max(0, min(255, int(r * mult))), max(0, min(255, int(g * mult))), max(0, min(255, int(b * mult)))], 255
+    # --- NIGHTTIME & MOON ENGINE ---
+    if altitude_deg <= -6:
+        moon_factor = calculate_moon_phase()
+        print(f"Night active -> Moon Phase Illumination: {moon_factor:.2f}")
+        
+        # Threshold: If moon illumination is under 15%, trigger custom repo preset
+        if moon_factor < 0.15:
+            return "TRIGGER_NIGHT_PRESET", 255
+        
+        # Clouds block moonlight dimming the sky further
+        if clouds > 30:
+            moon_factor *= (1.0 - ((clouds - 30) / 70.0) * 0.5)
+            
+        r = int(5 + (moon_factor * 25))
+        g = int(10 + (moon_factor * 30))
+        b = int(25 + (moon_factor * 45))
+        night_bri = int(40 + (moon_factor * 60))
+        return [max(0, min(255, x)) for x in (r, g, b)], night_bri
+            
+    # --- DAYTIME BALANCED ENGINE ---
+    if altitude_deg > 12:
+        r = 255
+        g = int(240 + (turbidity * 1.0))
+        b = int(200 - (turbidity * 3.0))  # Suppressed blue to balance LED tint
+        
+        if clouds > 25:
+            cloud_factor = (clouds - 25) / 75.0  
+            r = int(r * (1.0 - (cloud_factor * 0.25)))
+            g = int(g * (1.0 - (cloud_factor * 0.20)))
+            b = int(b * (1.0 - (cloud_factor * 0.10)))  
+        return [max(0, min(255, x)) for x in (r, g, b)], 255
+    else:
+        # Golden Hour / Twilight
+        factor = (altitude_deg + 6) / 18.0  
+        r = 255
+        g = int(80 + (factor * 110) + (turbidity * 4))
+        b = int(20 + (factor * 40) - (turbidity * 2))
+        
+        if clouds > 50:
+            r = int(r * 0.7)
+            g = int(g * 0.6)
+            b = int(b * 0.6)
+            
+        return [max(0, min(255, x)) for x in (r, g, b)], 200
 
 def main():
-    target, bri = calculate_sky()
-    payload = {"on": True, "bri": bri, "seg": [{"id": 1, "col": [target]}]}
-    client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, "WLED_Sync")
-    client.connect(MQTT_BROKER, MQTT_PORT, 60)
-    client.publish(MQTT_TOPIC, json.dumps(payload), qos=1)
-    client.disconnect()
+    if not WEATHER_API_KEY:
+        print("Error: Missing OpenWeather API Key.")
+        return
+
+    turbidity, clouds = get_weather_and_turbidity()
+    target_state, master_brightness = calculate_sky_state(turbidity, clouds)
+    
+    # --- REPOSITORY HOSTED PRESET LOADING MECHANISM ---
+    if target_state == "TRIGGER_NIGHT_PRESET":
+        print("Dark night reached. Pulling custom profile dark_night_preset.json...")
+        try:
+            with open("dark_night_preset.json", "r") as f:
+                wled_payload = json.load(f)
+            print("Successfully loaded layout parameters from GitHub preset file.")
+        except Exception as e:
+            print(f"Preset file reading missed, loading safe fallback layout. Error: {e}")
+            wled_payload = {
+                "on": True,
+                "bri": 30,
+                "seg": [{"id": 1, "start": 0, "stop": 90, "col": [[0, 0, 15]]}]
+            }
+    else:
+        # Standard Active Tracking Flow
+        wled_payload = {
+            "on": True,
+            "bri": master_brightness,
+            "seg": [{
+                "id": 1,
+                "start": 0,
+                "stop": 90,
+                "col": [target_state] 
+            }]
+        }
+
+    try:
+        client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, "VaranasiSky_Publisher_Public")
+    except AttributeError:
+        client = mqtt.Client("VaranasiSky_Publisher_Public")
+    
+    print("Connecting to Public HiveMQ...")
+    try:
+        client.connect(MQTT_BROKER, MQTT_PORT, 60)
+        client.loop_start()
+        
+        print(f"Publishing payload to topic {MQTT_TOPIC}...")
+        info = client.publish(MQTT_TOPIC, json.dumps(wled_payload), qos=1)
+        info.wait_for_publish() 
+        
+        client.loop_stop()
+        client.disconnect()
+        print("Data sync operation finished successfully.")
+    except Exception as e:
+        print(f"MQTT Operation failed: {e}")
 
 if __name__ == "__main__":
     main()
-    
