@@ -5,39 +5,25 @@ on:
     branches:
       - main
   schedule:
-    # Runs automatically every 10 minutes to keep your WLED colors synced with the sun
     - cron: '*/10 * * * *'
   workflow_dispatch: 
 
 jobs:
   sync-sky:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.10'
-
-      - name: Install Dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install requests pytz suncalc paho-mqtt
-
+      - run: pip install requests pytz suncalc paho-mqtt
       - name: Run Sky Processor
         env:
           OPENWEATHER_API_KEY: ${{ secrets.OPENWEATHER_API_KEY }}
         run: |
           cat << 'EOF' > sky_processor.py
-          import os
-          import math
-          import requests
-          import json
+          import os, math, requests, json, pytz
           from datetime import datetime
-          import pytz
           from suncalc import get_position
           import paho.mqtt.client as mqtt
 
@@ -45,60 +31,32 @@ jobs:
           MQTT_BROKER = "broker.hivemq.com"
           MQTT_PORT = 1883
           MQTT_TOPIC = "joe33143/wled-sky/api"
-          LAT, LON = 25.3176, 83.0062                     
+          LAT, LON = 25.3176, 83.0062
 
-          def get_weather_and_turbidity():
-              pollution_url = f"http://api.openweathermap.org/data/2.5/air_pollution?lat={LAT}&lon={LON}&appid={WEATHER_API_KEY}"
-              weather_url = f"http://api.openweathermap.org/data/2.5/weather?lat={LAT}&lon={LON}&appid={WEATHER_API_KEY}"
-              turbidity, clouds = 5.0, 0
+          def get_weather():
+              url = f"http://api.openweathermap.org/data/2.5/weather?lat={LAT}&lon={LON}&appid={WEATHER_API_KEY}"
               try:
-                  res = requests.get(pollution_url, timeout=5).json()
-                  components = res['list'][0]['components']
-                  turbidity = min(15.0, max(2.0, 2.0 + (components.get('pm10', 20) / 12.0) + (components.get('no2', 15) / 8.0)))
-              except Exception as e: print(f"Pollution API error: {e}")
-              try:
-                  res = requests.get(weather_url, timeout=5).json()
-                  clouds = res.get('clouds', {}).get('all', 0)
-              except Exception as e: print(f"Weather API error: {e}")
-              return turbidity, clouds
+                  res = requests.get(url, timeout=5).json()
+                  return float(res.get('clouds', {}).get('all', 0)), 5.0 # Clouds, Turbidity
+              except: return 0.0, 5.0
 
-          def calculate_sky_state(turbidity, clouds):
+          def calculate_sky():
               now = datetime.now(pytz.utc)
-              pos = get_position(now, LON, LAT)
-              alt = math.degrees(pos['altitude'])
+              alt = math.degrees(get_position(now, LON, LAT)['altitude'])
+              clouds, turbidity = get_weather()
               
-              # Nighttime
-              if alt <= -6:
-                  return "TRIGGER_NIGHT_PRESET", 40
+              if alt <= -6: return [10, 5, 25], 40 # Night
               
-              # Daytime & Twilight (Locked 5000K Ratio)
-              # Normalize alt -2 to 12 into a 0.0 to 1.0 factor
               factor = min(1.0, max(0.0, (alt + 2) / 14.0))
-              
-              # Base 5000K Temperature Color
-              r = int(150 + (factor * 105))
-              g = int(80 + (factor * 98))
-              b = int(20 + (factor * 105))
-              
-              # Uniform Weather Multiplier (Locks the Kelvin temperature)
-              turb_impact = 1.0 - max(0, (turbidity - 2.0) / 25.0)
-              cloud_impact = 1.0 - (clouds / 150.0)
-              mult = turb_impact * cloud_impact
-              
+              # 5000K target ratio
+              r, g, b = int(150 + (factor * 105)), int(80 + (factor * 98)), int(20 + (factor * 105))
+              mult = (1.0 - max(0, (turbidity - 2.0) / 25.0)) * (1.0 - (clouds / 150.0))
               return [max(0, min(255, int(r * mult))), max(0, min(255, int(g * mult))), max(0, min(255, int(b * mult)))], 255
 
           def main():
-              turbidity, clouds = get_weather_and_turbidity()
-              target, bri = calculate_sky_state(turbidity, clouds)
-              
-              if target == "TRIGGER_NIGHT_PRESET":
-                  try:
-                      with open("dark_night_preset.json", "r") as f: payload = json.load(f)
-                  except: payload = {"on": True, "bri": 30, "seg": [{"col": [[0, 0, 15]]}]}
-              else:
-                  payload = {"on": True, "bri": bri, "seg": [{"id": 1, "col": [target]}]}
-              
-              client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, "VaranasiSky_Publisher")
+              target, bri = calculate_sky()
+              payload = {"on": True, "bri": bri, "seg": [{"id": 1, "col": [target]}]}
+              client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, "WLED_Sync")
               client.connect(MQTT_BROKER, MQTT_PORT, 60)
               client.publish(MQTT_TOPIC, json.dumps(payload), qos=1)
               client.disconnect()
@@ -107,3 +65,4 @@ jobs:
               main()
           EOF
           python sky_processor.py
+          
