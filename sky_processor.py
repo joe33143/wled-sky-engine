@@ -68,25 +68,25 @@ def calculate_sky_state(turbidity, clouds):
         if clouds > 30:
             moon_factor *= (1.0 - ((clouds - 30) / 70.0) * 0.5)
             
-        # Segment 1: Dedicated moonlight RGB (W channel is 0)
+        # Segment 0 (RGB): Dedicated moonlight 
         r = int(40 + (moon_factor * 60))   
         g = int(80 + (moon_factor * 80))   
         b = int(150 + (moon_factor * 105)) 
         
-        seg1_rgbw = [max(0, min(255, x)) for x in (r, g, b)] + [0]
+        seg0_rgbw = [max(0, min(255, x)) for x in (r, g, b)] + [0]
         
-        # Segment 3: PWM is completely OFF at night 
-        seg3_rgbw = [0, 0, 0, 0]
+        # Segment 1 (PWM): Completely OFF at night 
+        seg1_rgbw = [0, 0, 0, 0]
         
-        return seg1_rgbw, seg3_rgbw
+        return seg0_rgbw, seg1_rgbw
             
     # --- 2. DAYTIME ENGINE ---
     elif altitude_deg > 12:
-        # Segment 3: PWM runs high [R, G, B, W all matching the PWM val]
+        # Segment 1 (PWM): Runs high, using the 4th channel (W) or all channels depending on WLED mapping
         pwm_val = 255 - int(clouds * 0.85)
-        seg3_rgbw = [pwm_val, pwm_val, pwm_val, pwm_val]
+        seg1_rgbw = [pwm_val, pwm_val, pwm_val, pwm_val]
         
-        # Segment 1: Warm amber base to offset the 6500K cold white (W channel is 0)
+        # Segment 0 (RGB): Warm amber base
         r = 255
         g = int(180 + (turbidity * 1.5))
         b = int(100 - (turbidity * 2.0))
@@ -97,18 +97,18 @@ def calculate_sky_state(turbidity, clouds):
             g = int(g * (1.0 - (cloud_factor * 0.1)))
             b = int(b + (cloud_factor * 40)) 
             
-        seg1_rgbw = [max(0, min(255, x)) for x in (r, g, b)] + [0]
-        return seg1_rgbw, seg3_rgbw
+        seg0_rgbw = [max(0, min(255, x)) for x in (r, g, b)] + [0]
+        return seg0_rgbw, seg1_rgbw
         
     # --- 3. TWILIGHT / GOLDEN HOUR ENGINE ---
     else:
         factor = (altitude_deg + 6) / 18.0  
         
-        # Segment 3: PWM ramps down smoothly to the physical floor limit (106)
+        # Segment 1 (PWM): Ramps down smoothly to physical floor (106)
         pwm_val = 106 + int(factor * 64) 
-        seg3_rgbw = [pwm_val, pwm_val, pwm_val, pwm_val]
+        seg1_rgbw = [pwm_val, pwm_val, pwm_val, pwm_val]
         
-        # Segment 1: Deep, saturated sunset colors
+        # Segment 0 (RGB): Deep sunset colors
         r = 255
         g = int(60 + (factor * 110) + (turbidity * 4))
         b = int(15 + (factor * 40) - (turbidity * 2))
@@ -117,8 +117,8 @@ def calculate_sky_state(turbidity, clouds):
             g = int(g * 0.7)
             b = int(b * 1.5)
             
-        seg1_rgbw = [max(0, min(255, x)) for x in (r, g, b)] + [0]
-        return seg1_rgbw, seg3_rgbw
+        seg0_rgbw = [max(0, min(255, x)) for x in (r, g, b)] + [0]
+        return seg0_rgbw, seg1_rgbw
 
 def main():
     if not WEATHER_API_KEY:
@@ -126,13 +126,13 @@ def main():
         return
 
     turbidity, clouds = get_weather_and_turbidity()
-    seg1_state, seg3_state = calculate_sky_state(turbidity, clouds)
+    seg0_state, seg1_state = calculate_sky_state(turbidity, clouds)
     
     # MASTER BRIGHTNESS LOCKED TO 100%
     master_brightness = 255
 
     # --- REPOSITORY HOSTED PRESET LOADING MECHANISM ---
-    if seg1_state == "TRIGGER_NIGHT_PRESET":
+    if seg0_state == "TRIGGER_NIGHT_PRESET":
         print("Dark night reached. Pulling custom profile dark_night_preset.json...")
         try:
             with open("dark_night_preset.json", "r") as f:
@@ -143,16 +143,18 @@ def main():
                 for segment in wled_payload["seg"]:
                     segment["bri"] = 255 
                 
-                seg3_exists = False
+                # Check for Segment 1 (PWM White)
+                seg1_exists = False
                 for segment in wled_payload["seg"]:
-                    if segment.get("id") == 3:
+                    if segment.get("id") == 1:
                         segment["bri"] = 255
                         segment["col"] = [[0, 0, 0, 0]]
-                        seg3_exists = True
+                        seg1_exists = True
                         break
                 
-                if not seg3_exists:
-                    wled_payload["seg"].append({"id": 3, "bri": 255, "col": [[0, 0, 0, 0]]})
+                # Force append Segment 1 OFF if missing from preset
+                if not seg1_exists:
+                    wled_payload["seg"].append({"id": 1, "bri": 255, "col": [[0, 0, 0, 0]]})
                 
         except Exception as e:
             print(f"Preset file reading missed. Error: {e}")
@@ -160,29 +162,25 @@ def main():
                 "on": True,
                 "bri": master_brightness,
                 "seg": [
-                    {"id": 1, "start": 0, "stop": 90, "bri": 255, "col": [[15, 20, 50, 0]]},
-                    {"id": 3, "start": 90, "stop": 91, "bri": 255, "col": [[0, 0, 0, 0]]}
+                    {"id": 0, "start": 0, "stop": 90, "bri": 255, "col": [[15, 20, 50, 0]]},
+                    {"id": 1, "start": 90, "stop": 180, "bri": 255, "col": [[0, 0, 0, 0]]}
                 ]
             }
     else:
-        # Standard Active Tracking Flow - FORCED TO 255 AND PROPER RGBW ARRAYS
+        # Standard Active Tracking Flow - targeting IDs 0 and 1
         wled_payload = {
             "on": True,
             "bri": master_brightness,
             "seg": [
                 {
-                    "id": 1,
-                    "start": 0,
-                    "stop": 90,
+                    "id": 0,
                     "bri": 255,
-                    "col": [seg1_state] 
+                    "col": [seg0_state] 
                 },
                 {
-                    "id": 3,
-                    "start": 90,
-                    "stop": 91,
+                    "id": 1,
                     "bri": 255,
-                    "col": [seg3_state]
+                    "col": [seg1_state]
                 }
             ]
         }
@@ -203,7 +201,7 @@ def main():
         
         client.loop_stop()
         client.disconnect()
-        print(f"Sync complete. Seg 1: {seg1_state}, Seg 3: {seg3_state}")
+        print(f"Sync complete. Seg 0 (RGB): {seg0_state}, Seg 1 (PWM): {seg1_state}")
     except Exception as e:
         print(f"MQTT Operation failed: {e}")
 
