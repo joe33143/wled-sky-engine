@@ -145,4 +145,55 @@ def main():
                 # Add or update Segment 3 to be OFF
                 wled_payload["seg"].append({"id": 3, "col": ["00000000"]})
                 
-            print("Successfully loaded
+            print("Successfully loaded layout parameters from GitHub preset file.")
+        except Exception as e:
+            print(f"Preset file reading missed, loading safe fallback layout. Error: {e}")
+            wled_payload = {
+                "on": True,
+                "bri": master_brightness,
+                "seg": [
+                    {"id": 1, "start": 0, "stop": 90, "col": [[15, 20, 50]]},
+                    {"id": 3, "col": ["00000000"]}
+                ]
+            }
+    else:
+        # Standard Active Tracking Flow
+        wled_payload = {
+            "on": True,
+            "bri": master_brightness,
+            "seg": [
+                {
+                    "id": 1,
+                    "start": 0,
+                    "stop": 90,
+                    "col": [seg1_state] 
+                },
+                {
+                    "id": 3,
+                    "col": [seg3_state]
+                }
+            ]
+        }
+
+    try:
+        client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, "VaranasiSky_Publisher_Public")
+    except AttributeError:
+        client = mqtt.Client("VaranasiSky_Publisher_Public")
+    
+    print("Connecting to Public HiveMQ...")
+    try:
+        client.connect(MQTT_BROKER, MQTT_PORT, 60)
+        client.loop_start()
+        
+        print(f"Publishing payload to topic {MQTT_TOPIC}...")
+        info = client.publish(MQTT_TOPIC, json.dumps(wled_payload), qos=1)
+        info.wait_for_publish() 
+        
+        client.loop_stop()
+        client.disconnect()
+        print(f"Sync complete. Seg 1: {seg1_state}, Seg 3: {seg3_state}")
+    except Exception as e:
+        print(f"MQTT Operation failed: {e}")
+
+if __name__ == "__main__":
+    main()
