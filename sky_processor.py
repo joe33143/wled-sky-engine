@@ -63,63 +63,62 @@ def calculate_sky_state(turbidity, clouds):
         print(f"Night active -> Moon Phase Illumination: {moon_factor:.2f}")
         
         if moon_factor < 0.15:
-            return "TRIGGER_NIGHT_PRESET", "00000000"
+            return "TRIGGER_NIGHT_PRESET", [0, 0, 0, 0]
         
         if clouds > 30:
             moon_factor *= (1.0 - ((clouds - 30) / 70.0) * 0.5)
             
-        # Segment 1: Dedicated moonlight RGB
+        # Segment 1: Dedicated moonlight RGB (W channel is 0)
         r = int(40 + (moon_factor * 60))   
         g = int(80 + (moon_factor * 80))   
         b = int(150 + (moon_factor * 105)) 
         
-        # Segment 3: PWM is completely OFF at night to prevent muddy light
-        seg3_hex = "00000000"
-        seg1_rgb = [max(0, min(255, x)) for x in (r, g, b)]
+        seg1_rgbw = [max(0, min(255, x)) for x in (r, g, b)] + [0]
         
-        return seg1_rgb, seg3_hex
+        # Segment 3: PWM is completely OFF at night 
+        seg3_rgbw = [0, 0, 0, 0]
+        
+        return seg1_rgbw, seg3_rgbw
             
     # --- 2. DAYTIME ENGINE ---
     elif altitude_deg > 12:
-        # Segment 3: PWM runs high, scaling down slightly if it's very cloudy
-        pwm_val = 255 - int(clouds * 0.85) # Drops to ~170 on heavily overcast days
-        seg3_hex = f"{pwm_val:02X}{pwm_val:02X}{pwm_val:02X}{pwm_val:02X}"
+        # Segment 3: PWM runs high [R, G, B, W all matching the PWM val]
+        pwm_val = 255 - int(clouds * 0.85)
+        seg3_rgbw = [pwm_val, pwm_val, pwm_val, pwm_val]
         
-        # Segment 1: Warm amber base to offset the 6500K cold white
+        # Segment 1: Warm amber base to offset the 6500K cold white (W channel is 0)
         r = 255
         g = int(180 + (turbidity * 1.5))
         b = int(100 - (turbidity * 2.0))
         
         if clouds > 25:
-            # Shift towards a cooler, neutral tone by suppressing red/amber
             cloud_factor = (clouds - 25) / 75.0  
             r = int(r * (1.0 - (cloud_factor * 0.3)))
             g = int(g * (1.0 - (cloud_factor * 0.1)))
-            b = int(b + (cloud_factor * 40)) # Boost blue slightly for overcast feel
+            b = int(b + (cloud_factor * 40)) 
             
-        seg1_rgb = [max(0, min(255, x)) for x in (r, g, b)]
-        return seg1_rgb, seg3_hex
+        seg1_rgbw = [max(0, min(255, x)) for x in (r, g, b)] + [0]
+        return seg1_rgbw, seg3_rgbw
         
     # --- 3. TWILIGHT / GOLDEN HOUR ENGINE ---
     else:
         factor = (altitude_deg + 6) / 18.0  
         
-        # Segment 3: PWM ramps down smoothly to the physical floor limit (106 / 6A)
+        # Segment 3: PWM ramps down smoothly to the physical floor limit (106)
         pwm_val = 106 + int(factor * 64) 
-        seg3_hex = f"{pwm_val:02X}{pwm_val:02X}{pwm_val:02X}{pwm_val:02X}"
+        seg3_rgbw = [pwm_val, pwm_val, pwm_val, pwm_val]
         
-        # Segment 1: Deep, saturated sunset colors take over visually
+        # Segment 1: Deep, saturated sunset colors
         r = 255
         g = int(60 + (factor * 110) + (turbidity * 4))
         b = int(15 + (factor * 40) - (turbidity * 2))
         
         if clouds > 40:
-            # Clouds scatter the light, creating moodier purple/deep hues
             g = int(g * 0.7)
             b = int(b * 1.5)
             
-        seg1_rgb = [max(0, min(255, x)) for x in (r, g, b)]
-        return seg1_rgb, seg3_hex
+        seg1_rgbw = [max(0, min(255, x)) for x in (r, g, b)] + [0]
+        return seg1_rgbw, seg3_rgbw
 
 def main():
     if not WEATHER_API_KEY:
@@ -139,52 +138,50 @@ def main():
             with open("dark_night_preset.json", "r") as f:
                 wled_payload = json.load(f)
             
-            # THE HAMMER: Force every single brightness slider to 255
             wled_payload["bri"] = master_brightness
             if "seg" in wled_payload:
                 for segment in wled_payload["seg"]:
-                    segment["bri"] = 255 # Force all existing segments to 100%
+                    segment["bri"] = 255 
                 
-                # Check if Segment 3 already exists in the preset
                 seg3_exists = False
                 for segment in wled_payload["seg"]:
                     if segment.get("id") == 3:
                         segment["bri"] = 255
-                        segment["col"] = ["00000000"]
+                        segment["col"] = [[0, 0, 0, 0]]
                         seg3_exists = True
                         break
                 
-                # If Segment 3 wasn't in the preset, add it and force it OFF but at 100% bri
                 if not seg3_exists:
-                    wled_payload["seg"].append({"id": 3, "bri": 255, "col": ["00000000"]})
+                    wled_payload["seg"].append({"id": 3, "bri": 255, "col": [[0, 0, 0, 0]]})
                 
-            print("Successfully loaded layout parameters from GitHub preset file.")
         except Exception as e:
-            print(f"Preset file reading missed, loading safe fallback layout. Error: {e}")
+            print(f"Preset file reading missed. Error: {e}")
             wled_payload = {
                 "on": True,
                 "bri": master_brightness,
                 "seg": [
-                    {"id": 1, "start": 0, "stop": 90, "bri": 255, "col": [[15, 20, 50]]},
-                    {"id": 3, "bri": 255, "col": ["00000000"]}
+                    {"id": 1, "start": 0, "stop": 90, "bri": 255, "col": [[15, 20, 50, 0]]},
+                    {"id": 3, "start": 90, "stop": 91, "bri": 255, "col": [[0, 0, 0, 0]]}
                 ]
             }
     else:
-        # Standard Active Tracking Flow
+        # Standard Active Tracking Flow - FORCED TO 255 AND PROPER RGBW ARRAYS
         wled_payload = {
             "on": True,
-            "bri": master_brightness, # Forces Master Slider
+            "bri": master_brightness,
             "seg": [
                 {
                     "id": 1,
                     "start": 0,
                     "stop": 90,
-                    "bri": 255,       # Forces Segment 1 Slider
+                    "bri": 255,
                     "col": [seg1_state] 
                 },
                 {
                     "id": 3,
-                    "bri": 255,       # Forces Segment 3 Slider
+                    "start": 90,
+                    "stop": 91,
+                    "bri": 255,
                     "col": [seg3_state]
                 }
             ]
@@ -210,25 +207,6 @@ def main():
     except Exception as e:
         print(f"MQTT Operation failed: {e}")
 
-    try:
-        client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, "VaranasiSky_Publisher_Public")
-    except AttributeError:
-        client = mqtt.Client("VaranasiSky_Publisher_Public")
-    
-    print("Connecting to Public HiveMQ...")
-    try:
-        client.connect(MQTT_BROKER, MQTT_PORT, 60)
-        client.loop_start()
-        
-        print(f"Publishing payload to topic {MQTT_TOPIC}...")
-        info = client.publish(MQTT_TOPIC, json.dumps(wled_payload), qos=1)
-        info.wait_for_publish() 
-        
-        client.loop_stop()
-        client.disconnect()
-        print(f"Sync complete. Seg 1: {seg1_state}, Seg 3: {seg3_state}")
-    except Exception as e:
-        print(f"MQTT Operation failed: {e}")
-
 if __name__ == "__main__":
     main()
+    
