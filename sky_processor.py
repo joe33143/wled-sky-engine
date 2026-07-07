@@ -139,11 +139,24 @@ def main():
             with open("dark_night_preset.json", "r") as f:
                 wled_payload = json.load(f)
             
-            # Ensure preset respects the 100% master brightness rule and turns off PWM
+            # THE HAMMER: Force every single brightness slider to 255
             wled_payload["bri"] = master_brightness
             if "seg" in wled_payload:
-                # Add or update Segment 3 to be OFF
-                wled_payload["seg"].append({"id": 3, "col": ["00000000"]})
+                for segment in wled_payload["seg"]:
+                    segment["bri"] = 255 # Force all existing segments to 100%
+                
+                # Check if Segment 3 already exists in the preset
+                seg3_exists = False
+                for segment in wled_payload["seg"]:
+                    if segment.get("id") == 3:
+                        segment["bri"] = 255
+                        segment["col"] = ["00000000"]
+                        seg3_exists = True
+                        break
+                
+                # If Segment 3 wasn't in the preset, add it and force it OFF but at 100% bri
+                if not seg3_exists:
+                    wled_payload["seg"].append({"id": 3, "bri": 255, "col": ["00000000"]})
                 
             print("Successfully loaded layout parameters from GitHub preset file.")
         except Exception as e:
@@ -152,28 +165,50 @@ def main():
                 "on": True,
                 "bri": master_brightness,
                 "seg": [
-                    {"id": 1, "start": 0, "stop": 90, "col": [[15, 20, 50]]},
-                    {"id": 3, "col": ["00000000"]}
+                    {"id": 1, "start": 0, "stop": 90, "bri": 255, "col": [[15, 20, 50]]},
+                    {"id": 3, "bri": 255, "col": ["00000000"]}
                 ]
             }
     else:
         # Standard Active Tracking Flow
         wled_payload = {
             "on": True,
-            "bri": master_brightness,
+            "bri": master_brightness, # Forces Master Slider
             "seg": [
                 {
                     "id": 1,
                     "start": 0,
                     "stop": 90,
+                    "bri": 255,       # Forces Segment 1 Slider
                     "col": [seg1_state] 
                 },
                 {
                     "id": 3,
+                    "bri": 255,       # Forces Segment 3 Slider
                     "col": [seg3_state]
                 }
             ]
         }
+
+    try:
+        client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, "VaranasiSky_Publisher_Public")
+    except AttributeError:
+        client = mqtt.Client("VaranasiSky_Publisher_Public")
+    
+    print("Connecting to Public HiveMQ...")
+    try:
+        client.connect(MQTT_BROKER, MQTT_PORT, 60)
+        client.loop_start()
+        
+        print(f"Publishing payload to topic {MQTT_TOPIC}...")
+        info = client.publish(MQTT_TOPIC, json.dumps(wled_payload), qos=1)
+        info.wait_for_publish() 
+        
+        client.loop_stop()
+        client.disconnect()
+        print(f"Sync complete. Seg 1: {seg1_state}, Seg 3: {seg3_state}")
+    except Exception as e:
+        print(f"MQTT Operation failed: {e}")
 
     try:
         client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, "VaranasiSky_Publisher_Public")
