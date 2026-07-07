@@ -58,6 +58,7 @@ def calculate_sky_state(turbidity, clouds):
     altitude_deg = math.degrees(pos['altitude'])
     
     # --- 1. NIGHTTIME ENGINE ---
+    # --- 1. NIGHTTIME ENGINE ---
     if altitude_deg <= -6:
         moon_factor = calculate_moon_phase()
         print(f"Night active -> Moon Phase Illumination: {moon_factor:.2f}")
@@ -68,10 +69,10 @@ def calculate_sky_state(turbidity, clouds):
         if clouds > 30:
             moon_factor *= (1.0 - ((clouds - 30) / 70.0) * 0.5)
             
-        # Segment 0 (RGB): Dedicated moonlight 
-        r = int(40 + (moon_factor * 60))   
-        g = int(80 + (moon_factor * 80))   
-        b = int(150 + (moon_factor * 105)) 
+        # Segment 0 (RGB): Desaturated, dimmer silvery-blue moonlight
+        r = int(10 + (moon_factor * 20))   # Scales 10 to 30
+        g = int(15 + (moon_factor * 30))   # Scales 15 to 45
+        b = int(25 + (moon_factor * 50))   # Scales 25 to 75
         
         seg0_rgbw = [max(0, min(255, x)) for x in (r, g, b)] + [0]
         
@@ -79,6 +80,7 @@ def calculate_sky_state(turbidity, clouds):
         seg1_rgbw = [0, 0, 0, 0]
         
         return seg0_rgbw, seg1_rgbw
+
             
     # --- 2. DAYTIME ENGINE ---
     elif altitude_deg > 12:
@@ -123,7 +125,7 @@ def calculate_sky_state(turbidity, clouds):
 def main():
     if not WEATHER_API_KEY:
         print("Error: Missing OpenWeather API Key.")
-        return
+        eturn
 
     turbidity, clouds = get_weather_and_turbidity()
     seg0_state, seg1_state = calculate_sky_state(turbidity, clouds)
