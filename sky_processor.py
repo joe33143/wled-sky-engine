@@ -9,7 +9,6 @@ import paho.mqtt.client as mqtt
 
 WEATHER_API_KEY = os.getenv("OPENWEATHER_API_KEY")
 
-# Fixed: Correct public HiveMQ server address
 MQTT_BROKER = "broker.hivemq.com"
 MQTT_PORT = 1883
 MQTT_TOPIC = "joe33143/wled-sky/api"
@@ -18,14 +17,12 @@ LAT = 25.3176
 LON = 83.0062                     
 
 def get_weather_and_turbidity():
-    """Pulls air pollution and cloud coverage data using correct OpenWeather API endpoints."""
-    pollution_url = f"http://openweathermap.org{LAT}&lon={LON}&appid={WEATHER_API_KEY}"
-    weather_url = f"http://openweathermap.org{LAT}&lon={LON}&appid={WEATHER_API_KEY}"
+    pollution_url = f"http://api.openweathermap.org/data/2.5/air_pollution?lat={LAT}&lon={LON}&appid={WEATHER_API_KEY}"
+    weather_url = f"http://api.openweathermap.org/data/2.5/weather?lat={LAT}&lon={LON}&appid={WEATHER_API_KEY}"
     
     turbidity = 5.0
     clouds = 0  
     
-    # 1. Fetch Pollution Data
     try:
         res = requests.get(pollution_url, timeout=5).json()
         components = res['list'][0]['components']
@@ -35,7 +32,6 @@ def get_weather_and_turbidity():
     except Exception as e:
         print(f"Air Pollution API fallback used: {e}")
 
-    # 2. Fetch Cloud Coverage Data
     try:
         res = requests.get(weather_url, timeout=5).json()
         clouds = res.get('clouds', {}).get('all', 0)
@@ -46,8 +42,6 @@ def get_weather_and_turbidity():
     return turbidity, clouds
 
 def calculate_moon_phase():
-    """Calculates moon illumination factor using date math.
-    Returns 0.0 (New Moon) to 1.0 (Full Moon)."""
     now = datetime.now(pytz.utc)
     base_new_moon = datetime(2000, 1, 6, 18, 14, tzinfo=pytz.utc)
     diff = now - base_new_moon
@@ -59,55 +53,73 @@ def calculate_moon_phase():
     return (1.0 - normalized_phase) * 2.0
 
 def calculate_sky_state(turbidity, clouds):
-    """Evaluates sun position and returns target color/state and baseline brightness."""
     now = datetime.now(pytz.utc)
     pos = get_position(now, LON, LAT)
     altitude_deg = math.degrees(pos['altitude'])
     
-    # --- NIGHTTIME & MOON ENGINE ---
+    # --- 1. NIGHTTIME ENGINE ---
     if altitude_deg <= -6:
         moon_factor = calculate_moon_phase()
         print(f"Night active -> Moon Phase Illumination: {moon_factor:.2f}")
         
-        # Threshold: If moon illumination is under 15%, trigger custom repo preset
         if moon_factor < 0.15:
-            return "TRIGGER_NIGHT_PRESET", 255
+            return "TRIGGER_NIGHT_PRESET", "00000000"
         
-        # Clouds block moonlight dimming the sky further
         if clouds > 30:
             moon_factor *= (1.0 - ((clouds - 30) / 70.0) * 0.5)
             
-        r = int(5 + (moon_factor * 25))
-        g = int(10 + (moon_factor * 30))
-        b = int(25 + (moon_factor * 45))
-        night_bri = int(40 + (moon_factor * 60))
-        return [max(0, min(255, x)) for x in (r, g, b)], night_bri
+        # Segment 1: Dedicated moonlight RGB
+        r = int(40 + (moon_factor * 60))   
+        g = int(80 + (moon_factor * 80))   
+        b = int(150 + (moon_factor * 105)) 
+        
+        # Segment 3: PWM is completely OFF at night to prevent muddy light
+        seg3_hex = "00000000"
+        seg1_rgb = [max(0, min(255, x)) for x in (r, g, b)]
+        
+        return seg1_rgb, seg3_hex
             
-    # --- DAYTIME BALANCED ENGINE ---
-    if altitude_deg > 12:
+    # --- 2. DAYTIME ENGINE ---
+    elif altitude_deg > 12:
+        # Segment 3: PWM runs high, scaling down slightly if it's very cloudy
+        pwm_val = 255 - int(clouds * 0.85) # Drops to ~170 on heavily overcast days
+        seg3_hex = f"{pwm_val:02X}{pwm_val:02X}{pwm_val:02X}{pwm_val:02X}"
+        
+        # Segment 1: Warm amber base to offset the 6500K cold white
         r = 255
-        g = int(240 + (turbidity * 1.0))
-        b = int(200 - (turbidity * 3.0))  # Suppressed blue to balance LED tint
+        g = int(180 + (turbidity * 1.5))
+        b = int(100 - (turbidity * 2.0))
         
         if clouds > 25:
+            # Shift towards a cooler, neutral tone by suppressing red/amber
             cloud_factor = (clouds - 25) / 75.0  
-            r = int(r * (1.0 - (cloud_factor * 0.25)))
-            g = int(g * (1.0 - (cloud_factor * 0.20)))
-            b = int(b * (1.0 - (cloud_factor * 0.10)))  
-        return [max(0, min(255, x)) for x in (r, g, b)], 255
-    else:
-        # Golden Hour / Twilight
-        factor = (altitude_deg + 6) / 18.0  
-        r = 255
-        g = int(80 + (factor * 110) + (turbidity * 4))
-        b = int(20 + (factor * 40) - (turbidity * 2))
-        
-        if clouds > 50:
-            r = int(r * 0.7)
-            g = int(g * 0.6)
-            b = int(b * 0.6)
+            r = int(r * (1.0 - (cloud_factor * 0.3)))
+            g = int(g * (1.0 - (cloud_factor * 0.1)))
+            b = int(b + (cloud_factor * 40)) # Boost blue slightly for overcast feel
             
-        return [max(0, min(255, x)) for x in (r, g, b)], 200
+        seg1_rgb = [max(0, min(255, x)) for x in (r, g, b)]
+        return seg1_rgb, seg3_hex
+        
+    # --- 3. TWILIGHT / GOLDEN HOUR ENGINE ---
+    else:
+        factor = (altitude_deg + 6) / 18.0  
+        
+        # Segment 3: PWM ramps down smoothly to the physical floor limit (106 / 6A)
+        pwm_val = 106 + int(factor * 64) 
+        seg3_hex = f"{pwm_val:02X}{pwm_val:02X}{pwm_val:02X}{pwm_val:02X}"
+        
+        # Segment 1: Deep, saturated sunset colors take over visually
+        r = 255
+        g = int(60 + (factor * 110) + (turbidity * 4))
+        b = int(15 + (factor * 40) - (turbidity * 2))
+        
+        if clouds > 40:
+            # Clouds scatter the light, creating moodier purple/deep hues
+            g = int(g * 0.7)
+            b = int(b * 1.5)
+            
+        seg1_rgb = [max(0, min(255, x)) for x in (r, g, b)]
+        return seg1_rgb, seg3_hex
 
 def main():
     if not WEATHER_API_KEY:
@@ -115,54 +127,22 @@ def main():
         return
 
     turbidity, clouds = get_weather_and_turbidity()
-    target_state, master_brightness = calculate_sky_state(turbidity, clouds)
+    seg1_state, seg3_state = calculate_sky_state(turbidity, clouds)
     
+    # MASTER BRIGHTNESS LOCKED TO 100%
+    master_brightness = 255
+
     # --- REPOSITORY HOSTED PRESET LOADING MECHANISM ---
-    if target_state == "TRIGGER_NIGHT_PRESET":
+    if seg1_state == "TRIGGER_NIGHT_PRESET":
         print("Dark night reached. Pulling custom profile dark_night_preset.json...")
         try:
             with open("dark_night_preset.json", "r") as f:
                 wled_payload = json.load(f)
-            print("Successfully loaded layout parameters from GitHub preset file.")
-        except Exception as e:
-            print(f"Preset file reading missed, loading safe fallback layout. Error: {e}")
-            wled_payload = {
-                "on": True,
-                "bri": 30,
-                "seg": [{"id": 1, "start": 0, "stop": 90, "col": [[0, 0, 15]]}]
-            }
-    else:
-        # Standard Active Tracking Flow
-        wled_payload = {
-            "on": True,
-            "bri": master_brightness,
-            "seg": [{
-                "id": 1,
-                "start": 0,
-                "stop": 90,
-                "col": [target_state] 
-            }]
-        }
-
-    try:
-        client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, "VaranasiSky_Publisher_Public")
-    except AttributeError:
-        client = mqtt.Client("VaranasiSky_Publisher_Public")
-    
-    print("Connecting to Public HiveMQ...")
-    try:
-        client.connect(MQTT_BROKER, MQTT_PORT, 60)
-        client.loop_start()
-        
-        print(f"Publishing payload to topic {MQTT_TOPIC}...")
-        info = client.publish(MQTT_TOPIC, json.dumps(wled_payload), qos=1)
-        info.wait_for_publish() 
-        
-        client.loop_stop()
-        client.disconnect()
-        print("Data sync operation finished successfully.")
-    except Exception as e:
-        print(f"MQTT Operation failed: {e}")
-
-if __name__ == "__main__":
-    main()
+            
+            # Ensure preset respects the 100% master brightness rule and turns off PWM
+            wled_payload["bri"] = master_brightness
+            if "seg" in wled_payload:
+                # Add or update Segment 3 to be OFF
+                wled_payload["seg"].append({"id": 3, "col": ["00000000"]})
+                
+            print("Successfully loaded
