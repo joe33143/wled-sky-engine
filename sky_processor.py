@@ -63,7 +63,6 @@ def calculate_sky_state(turbidity, clouds):
     # --- 1. NIGHTTIME ENGINE (Below -6°) ---
     if altitude_deg <= -6:
         moon_factor = calculate_moon_phase()
-        print(f"Night active -> Moon Phase Illumination: {moon_factor:.2f}")
         
         if moon_factor < 0.15:
             return "TRIGGER_NIGHT_PRESET", [0, 0, 0, 0]
@@ -95,9 +94,12 @@ def calculate_sky_state(turbidity, clouds):
     elif altitude_deg <= 35:
         factor = (altitude_deg - 15) / 20.0  
         
-        base_pwm = 76 + int(factor * 115) 
-        pwm_val = base_pwm - int((clouds / 100.0) * (base_pwm * 0.3))
-        pwm_val = max(76, min(191, pwm_val))
+        # FIX: PWM now strictly scales within your hardware's 105-137 range
+        base_pwm = 105 + int(factor * 32) 
+        
+        # Clouds subtract a max of 15 steps so it never accidentally drops below 105
+        cloud_dim = int((clouds / 100.0) * 15)
+        pwm_val = max(105, min(137, base_pwm - cloud_dim))
         seg1_rgbw = [pwm_val, pwm_val, pwm_val, pwm_val]
         
         r = 255
@@ -112,9 +114,10 @@ def calculate_sky_state(turbidity, clouds):
 
     # --- 4. FULL DAYTIME (Above 35°) ---
     else:
-        base_pwm = 191 # 75% max cap
-        pwm_val = base_pwm - int((clouds / 100.0) * (base_pwm * 0.3))
-        pwm_val = max(76, min(191, pwm_val))
+        # FIX: Hard ceiling locked at 137
+        base_pwm = 137 
+        cloud_dim = int((clouds / 100.0) * 15)
+        pwm_val = max(105, min(137, base_pwm - cloud_dim))
         seg1_rgbw = [pwm_val, pwm_val, pwm_val, pwm_val]
         
         r = 255
@@ -130,10 +133,9 @@ def calculate_sky_state(turbidity, clouds):
     # ==========================================
     # GLOBAL HARDWARE RGB CALIBRATION FILTER
     # ==========================================
-    # Adjust these multipliers to color-correct your specific WS281x strip.
     cal_r = 1.00  
     cal_g = 0.85  
-    cal_b = 0.50  # Default aggressively suppressing blue to allow ambers to read properly
+    cal_b = 0.50  
 
     raw_r = max(0, min(255, r))
     raw_g = max(0, min(255, g))
@@ -143,7 +145,6 @@ def calculate_sky_state(turbidity, clouds):
     final_g = int(raw_g * cal_g)
     final_b = int(raw_b * cal_b)
 
-    # Segment 0 expects [R, G, B, W] array
     seg0_rgbw = [max(0, min(255, final_r)), max(0, min(255, final_g)), max(0, min(255, final_b)), 0]
     
     return seg0_rgbw, seg1_rgbw
