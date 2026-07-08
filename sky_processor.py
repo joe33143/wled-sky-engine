@@ -141,6 +141,24 @@ def calculate_sky_state(turbidity, clouds):
     raw_g = max(0, min(255, g))
     raw_b = max(0, min(255, b))
 
+    # DYNAMIC LOW-END CURVE
+    # Slowly crushes the highly efficient green diode as brightness drops.
+    # Also gently dims the overall output at the bottom end to prevent it from glaring at night.
+    max_val = max(raw_r, raw_g, raw_b)
+    
+    if max_val < 100:
+        # As max_val approaches 0, the dimming_ratio approaches 0
+        dimming_ratio = max_val / 100.0 
+        
+        # Green drops from a 1.0 multiplier at threshold down to roughly 0.35 at pitch black
+        low_end_green_factor = 0.35 + (0.65 * dimming_ratio)
+        cal_g *= low_end_green_factor
+        
+        # Red and Blue drop from a 1.0 multiplier down to roughly 0.6 at pitch black
+        low_end_base_factor = 0.60 + (0.40 * dimming_ratio)
+        cal_r *= low_end_base_factor
+        cal_b *= low_end_base_factor
+
     final_r = int(raw_r * cal_r)
     final_g = int(raw_g * cal_g)
     final_b = int(raw_b * cal_b)
@@ -148,6 +166,7 @@ def calculate_sky_state(turbidity, clouds):
     seg0_rgbw = [max(0, min(255, final_r)), max(0, min(255, final_g)), max(0, min(255, final_b)), 0]
     
     return seg0_rgbw, seg1_rgbw
+    
 
 def main():
     if not WEATHER_API_KEY:
