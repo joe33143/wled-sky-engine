@@ -57,8 +57,10 @@ def calculate_sky_state(turbidity, clouds):
     pos = get_position(now, LON, LAT)
     altitude_deg = math.degrees(pos['altitude'])
     
-    # --- 1. NIGHTTIME ENGINE ---
-    # --- 1. NIGHTTIME ENGINE ---
+    r, g, b = 0, 0, 0
+    seg1_rgbw = [0, 0, 0, 0]
+    
+    # --- 1. NIGHTTIME ENGINE (Below -6°) ---
     if altitude_deg <= -6:
         moon_factor = calculate_moon_phase()
         print(f"Night active -> Moon Phase Illumination: {moon_factor:.2f}")
@@ -69,29 +71,55 @@ def calculate_sky_state(turbidity, clouds):
         if clouds > 30:
             moon_factor *= (1.0 - ((clouds - 30) / 70.0) * 0.5)
             
-        # Segment 0 (RGB): Desaturated, dimmer silvery-blue moonlight
-        r = int(10 + (moon_factor * 20))   # Scales 10 to 30
-        g = int(15 + (moon_factor * 30))   # Scales 15 to 45
-        b = int(25 + (moon_factor * 50))   # Scales 25 to 75
+        r = int(10 + (moon_factor * 20))
+        g = int(15 + (moon_factor * 30))
+        b = int(25 + (moon_factor * 50))
         
-        seg0_rgbw = [max(0, min(255, x)) for x in (r, g, b)] + [0]
-        
-        # Segment 1 (PWM): Completely OFF at night 
-        seg1_rgbw = [0, 0, 0, 0]
-        
-        return seg0_rgbw, seg1_rgbw
+        seg1_rgbw = [0, 0, 0, 0] # PWM OFF
 
+    # --- 2. THE COLOR HOLD (-6° to 15°) ---
+    elif altitude_deg <= 15:
+        factor = (altitude_deg + 6) / 21.0  
+        
+        r = 255
+        g = int(40 + (factor * 80) + (turbidity * 4))
+        b = int(10 + (factor * 20) - (turbidity * 2))
+        
+        if clouds > 40:
+            g = int(g * 0.7)
+            b = int(b * 1.5)
             
-    # --- 2. DAYTIME ENGINE ---
-    elif altitude_deg > 12:
-        # Segment 1 (PWM): Runs high, using the 4th channel (W) or all channels depending on WLED mapping
-        pwm_val = 255 - int(clouds * 0.85)
+        seg1_rgbw = [0, 0, 0, 0] # PWM OFF
+
+    # --- 3. THE WIDE RAMP (15° to 35°) ---
+    elif altitude_deg <= 35:
+        factor = (altitude_deg - 15) / 20.0  
+        
+        base_pwm = 76 + int(factor * 115) 
+        pwm_val = base_pwm - int((clouds / 100.0) * (base_pwm * 0.3))
+        pwm_val = max(76, min(191, pwm_val))
         seg1_rgbw = [pwm_val, pwm_val, pwm_val, pwm_val]
         
-        # Segment 0 (RGB): Warm amber base
         r = 255
-        g = int(180 + (turbidity * 1.5))
-        b = int(100 - (turbidity * 2.0))
+        g = int(120 + (factor * 80) + (turbidity * 1.5))
+        b = int(30 + (factor * 150) - (turbidity * 2.0))
+        
+        if clouds > 25:
+            cloud_factor = (clouds - 25) / 75.0  
+            r = int(r * (1.0 - (cloud_factor * 0.3)))
+            g = int(g * (1.0 - (cloud_factor * 0.1)))
+            b = int(b + (cloud_factor * 40)) 
+
+    # --- 4. FULL DAYTIME (Above 35°) ---
+    else:
+        base_pwm = 191 # 75% max cap
+        pwm_val = base_pwm - int((clouds / 100.0) * (base_pwm * 0.3))
+        pwm_val = max(76, min(191, pwm_val))
+        seg1_rgbw = [pwm_val, pwm_val, pwm_val, pwm_val]
+        
+        r = 255
+        g = int(200 + (turbidity * 1.5))
+        b = int(180 - (turbidity * 2.0))
         
         if clouds > 25:
             cloud_factor = (clouds - 25) / 75.0  
@@ -99,38 +127,35 @@ def calculate_sky_state(turbidity, clouds):
             g = int(g * (1.0 - (cloud_factor * 0.1)))
             b = int(b + (cloud_factor * 40)) 
             
-        seg0_rgbw = [max(0, min(255, x)) for x in (r, g, b)] + [0]
-        return seg0_rgbw, seg1_rgbw
-        
-    # --- 3. TWILIGHT / GOLDEN HOUR ENGINE ---
-    else:
-        factor = (altitude_deg + 6) / 18.0  
-        
-        # Segment 1 (PWM): Ramps down smoothly to physical floor (106)
-        pwm_val = 106 + int(factor * 64) 
-        seg1_rgbw = [pwm_val, pwm_val, pwm_val, pwm_val]
-        
-        # Segment 0 (RGB): Deep sunset colors
-        r = 255
-        g = int(60 + (factor * 110) + (turbidity * 4))
-        b = int(15 + (factor * 40) - (turbidity * 2))
-        
-        if clouds > 40:
-            g = int(g * 0.7)
-            b = int(b * 1.5)
-            
-        seg0_rgbw = [max(0, min(255, x)) for x in (r, g, b)] + [0]
-        return seg0_rgbw, seg1_rgbw
+    # ==========================================
+    # GLOBAL HARDWARE RGB CALIBRATION FILTER
+    # ==========================================
+    # Adjust these multipliers to color-correct your specific WS281x strip.
+    cal_r = 1.00  
+    cal_g = 0.85  
+    cal_b = 0.50  # Default aggressively suppressing blue to allow ambers to read properly
+
+    raw_r = max(0, min(255, r))
+    raw_g = max(0, min(255, g))
+    raw_b = max(0, min(255, b))
+
+    final_r = int(raw_r * cal_r)
+    final_g = int(raw_g * cal_g)
+    final_b = int(raw_b * cal_b)
+
+    # Segment 0 expects [R, G, B, W] array
+    seg0_rgbw = [max(0, min(255, final_r)), max(0, min(255, final_g)), max(0, min(255, final_b)), 0]
+    
+    return seg0_rgbw, seg1_rgbw
 
 def main():
     if not WEATHER_API_KEY:
         print("Error: Missing OpenWeather API Key.")
-        eturn
+        return
 
     turbidity, clouds = get_weather_and_turbidity()
     seg0_state, seg1_state = calculate_sky_state(turbidity, clouds)
     
-    # MASTER BRIGHTNESS LOCKED TO 100%
     master_brightness = 255
 
     # --- REPOSITORY HOSTED PRESET LOADING MECHANISM ---
@@ -145,7 +170,6 @@ def main():
                 for segment in wled_payload["seg"]:
                     segment["bri"] = 255 
                 
-                # Check for Segment 1 (PWM White)
                 seg1_exists = False
                 for segment in wled_payload["seg"]:
                     if segment.get("id") == 1:
@@ -154,7 +178,6 @@ def main():
                         seg1_exists = True
                         break
                 
-                # Force append Segment 1 OFF if missing from preset
                 if not seg1_exists:
                     wled_payload["seg"].append({"id": 1, "bri": 255, "col": [[0, 0, 0, 0]]})
                 
@@ -164,7 +187,7 @@ def main():
                 "on": True,
                 "bri": master_brightness,
                 "seg": [
-                    {"id": 0, "start": 0, "stop": 90, "bri": 255, "col": [[15, 20, 50, 0]]},
+                    {"id": 0, "start": 0, "stop": 90, "bri": 255, "col": [[5, 5, 20, 0]]},
                     {"id": 1, "start": 90, "stop": 180, "bri": 255, "col": [[0, 0, 0, 0]]}
                 ]
             }
@@ -209,4 +232,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
