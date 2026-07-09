@@ -77,30 +77,27 @@ def calculate_sky_state(turbidity, clouds):
         seg1_rgbw = [0, 0, 0, 0] # PWM OFF
 
     # --- 2. THE COLOR HOLD (-6° to 10°) ---
-    # Sun is breaking the horizon. Red starts high, but Green and Blue 
-    # aggressively ramp up to turn the neon dawn into a warm morning.
     elif altitude_deg <= 10:
         factor = (altitude_deg + 6) / 16.0  
         
         r = int(150 + (factor * 105)) 
-        g = int(30 + (factor * 180) + (turbidity * 3))
-        b = int(20 + (factor * 160) - (turbidity * 2))
+        g = int(30 + (factor * 120) + (turbidity * 3))
+        b = int(20 + (factor * 120) - (turbidity * 2))
         
-        # THE OVERCAST DESATURATION FIX
+        # TRUE OVERCAST DESATURATION
         if clouds > 40:
-            cloud_factor = (clouds - 40) / 60.0 # Scales from 0.0 to 1.0 based on cloud thickness
+            cloud_factor = (clouds - 40) / 60.0 
+            # Heavily dim the overall light (drops up to 65% brightness)
+            dim_multiplier = 1.0 - (cloud_factor * 0.65) 
             
-            # Crush the red to stop the neon glow and reduce overall brightness
-            r = int(r * (1.0 - (cloud_factor * 0.45))) 
-            
-            # Boost Green and heavily boost Blue to wash the color into a diffused gray
-            g = int(g + (cloud_factor * 50)) 
-            b = int(b + (cloud_factor * 130))
+            # Crush everything down to a dim, gloomy slate-grey
+            r = int(r * dim_multiplier)
+            g = int(g * dim_multiplier * 0.8) # Extra penalty to green to prevent swampiness
+            b = int((b + 40) * dim_multiplier) # Slight blue bump to keep it looking like a morning sky
             
         seg1_rgbw = [0, 0, 0, 0] # PWM remains OFF
 
     # --- 3. THE WIDE RAMP (10° to 35°) ---
-    # Broad daylight is starting. PWM wakes up within the hardware constraints.
     elif altitude_deg <= 35:
         factor = (altitude_deg - 10) / 25.0  
         
@@ -110,17 +107,19 @@ def calculate_sky_state(turbidity, clouds):
         pwm_val = max(105, min(137, base_pwm - cloud_dim))
         seg1_rgbw = [pwm_val, pwm_val, pwm_val, pwm_val]
         
-        # RGB strip crossfades into crisp daylight
         r = 255
         g = int(210 + (factor * 45) + (turbidity * 1.0))
         b = int(180 + (factor * 75) - (turbidity * 2.0))
         
-        # Overcast desaturation for daytime
+        # TRUE OVERCAST DESATURATION FOR DAYTIME
         if clouds > 25:
             cloud_factor = (clouds - 25) / 75.0  
-            r = int(r * (1.0 - (cloud_factor * 0.3)))
-            g = int(g * (1.0 - (cloud_factor * 0.1)))
-            b = int(b + (cloud_factor * 60)) 
+            # Drops up to 50% brightness on heavy overcast days
+            dim_multiplier = 1.0 - (cloud_factor * 0.5)
+            
+            r = int(r * dim_multiplier)
+            g = int(g * dim_multiplier * 0.9)
+            b = int((b + 30) * dim_multiplier) 
  
     # --- 4. FULL DAYTIME (Above 35°) ---
     else:
