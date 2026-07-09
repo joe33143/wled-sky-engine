@@ -114,23 +114,25 @@ def calculate_sky_state(turbidity, clouds):
     elif altitude_deg <= 55:
         factor = (altitude_deg - 35) / 20.0  
         
-        base_pwm = 105 + int(factor * 32) 
-        cloud_dim = int((clouds / 100.0) * 15)
+        # NEW HARDWARE LIMITS: Scales flawlessly from 75 to 255
+        base_pwm = 75 + int(factor * 180) 
+        
+        # Increased cloud dimming depth now that you have the range for it
+        cloud_dim = int((clouds / 100.0) * 40) 
         
         target_pwm = base_pwm - cloud_dim
-        if target_pwm < 105:
+        # The Trapdoor: Stays off if clouds drop it below your new 75 floor
+        if target_pwm < 75:
             pwm_val = 0
         else:
-            pwm_val = min(137, target_pwm)
+            pwm_val = min(255, target_pwm)
             
         seg1_rgbw = [pwm_val, pwm_val, pwm_val, pwm_val]
         
         # FILTER MODE CROSSFADE:
-        # As the 6500K PWM wakes up, the RGB strip steps back to act as a warmth filter.
-        # It lowers overall brightness and aggressively starves its blue channel to 0.
-        r = int(255 - (factor * 55))       # Dims slightly from 255 down to 200
-        g = int(210 - (factor * 60) + (turbidity * 1.5))  # Dims to let PWM lead
-        b = max(0, int(200 - (factor * 200) - (turbidity * 2.0))) # Kills blue completely
+        r = int(255 - (factor * 55))       
+        g = int(210 - (factor * 60) + (turbidity * 1.5))  
+        b = max(0, int(200 - (factor * 200) - (turbidity * 2.0))) 
         
         if clouds > 25:
             cloud_factor = (clouds - 25) / 75.0  
@@ -142,22 +144,22 @@ def calculate_sky_state(turbidity, clouds):
 
     # --- 4. FULL DAYTIME (Above 55°) ---
     else:
-        base_pwm = 137
-        cloud_dim = int((clouds / 100.0) * 15)
+        # NEW HARDWARE CEILING: Unlocked to 255
+        base_pwm = 255
+        cloud_dim = int((clouds / 100.0) * 40)
         
         target_pwm = base_pwm - cloud_dim
-        if target_pwm < 105:
+        if target_pwm < 75:
             pwm_val = 0
         else:
-            pwm_val = min(137, target_pwm)
+            pwm_val = min(255, target_pwm)
             
         seg1_rgbw = [pwm_val, pwm_val, pwm_val, pwm_val]
         
         # FULL FILTER MODE:
-        # RGB just sits in the background injecting warmth to balance the 6500K PWM.
         r = 200
         g = int(150 + (turbidity * 1.5))
-        b = 0  # No blue needed; the 6500K strip provides it all
+        b = 0  
         
         if clouds > 25:
             cloud_factor = (clouds - 25) / 75.0  
@@ -166,7 +168,6 @@ def calculate_sky_state(turbidity, clouds):
             r = int(r * dim_multiplier)
             g = int(g * dim_multiplier * 0.9)
             b = int(30 * dim_multiplier)
-
 
     # ==========================================
     # GLOBAL HARDWARE RGB CALIBRATION FILTER
