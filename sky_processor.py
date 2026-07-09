@@ -156,7 +156,6 @@ def calculate_sky_state(turbidity, clouds):
             g = int(g * dim_multiplier * 0.9)
             b = int((b + 30) * dim_multiplier)
  
- 
     # --- 4. FULL DAYTIME (Above 35°) ---
     else:
         # FIX: Hard ceiling locked at 137
