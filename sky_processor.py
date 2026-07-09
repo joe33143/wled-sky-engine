@@ -114,18 +114,21 @@ def calculate_sky_state(turbidity, clouds):
     elif altitude_deg <= 55:
         factor = (altitude_deg - 35) / 20.0  
         
-        # NEW HARDWARE LIMITS: Scales flawlessly from 75 to 255
-        base_pwm = 75 + int(factor * 180) 
+        # --- PWM SCALING CONTROLS ---
+        PWM_FLOOR = 75 
+        PWM_MAX = 170   # <--- TWEAK THIS NUMBER: Lowers the maximum daytime brightness
+        PWM_RANGE = PWM_MAX - PWM_FLOOR
         
-        # Increased cloud dimming depth now that you have the range for it
+        # Scales smoothly from 75 up to your chosen MAX
+        base_pwm = PWM_FLOOR + int(factor * PWM_RANGE) 
+        
         cloud_dim = int((clouds / 100.0) * 40) 
         
         target_pwm = base_pwm - cloud_dim
-        # The Trapdoor: Stays off if clouds drop it below your new 75 floor
-        if target_pwm < 75:
+        if target_pwm < PWM_FLOOR:
             pwm_val = 0
         else:
-            pwm_val = min(255, target_pwm)
+            pwm_val = min(PWM_MAX, target_pwm)
             
         seg1_rgbw = [pwm_val, pwm_val, pwm_val, pwm_val]
         
@@ -144,15 +147,18 @@ def calculate_sky_state(turbidity, clouds):
 
     # --- 4. FULL DAYTIME (Above 55°) ---
     else:
-        # NEW HARDWARE CEILING: Unlocked to 255
-        base_pwm = 255
+        # --- PWM SCALING CONTROLS ---
+        PWM_FLOOR = 75
+        PWM_MAX = 170   # <--- MUST MATCH THE NUMBER IN PHASE 3
+        
+        base_pwm = PWM_MAX
         cloud_dim = int((clouds / 100.0) * 40)
         
         target_pwm = base_pwm - cloud_dim
-        if target_pwm < 75:
+        if target_pwm < PWM_FLOOR:
             pwm_val = 0
         else:
-            pwm_val = min(255, target_pwm)
+            pwm_val = min(PWM_MAX, target_pwm)
             
         seg1_rgbw = [pwm_val, pwm_val, pwm_val, pwm_val]
         
