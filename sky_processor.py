@@ -122,7 +122,7 @@ def calculate_sky_state(turbidity, clouds):
         # Scales smoothly from 75 up to your chosen MAX
         base_pwm = PWM_FLOOR + int(factor * PWM_RANGE) 
         
-        cloud_dim = int((clouds / 100.0) * 40) 
+        cloud_dim = int((clouds / 100.0) * 20) 
         
         target_pwm = base_pwm - cloud_dim
         if target_pwm < PWM_FLOOR:
@@ -152,7 +152,7 @@ def calculate_sky_state(turbidity, clouds):
         PWM_MAX = 135   # <--- MUST MATCH THE NUMBER IN PHASE 3
         
         base_pwm = PWM_MAX
-        cloud_dim = int((clouds / 100.0) * 40)
+        cloud_dim = int((clouds / 100.0) * 20)
         
         target_pwm = base_pwm - cloud_dim
         if target_pwm < PWM_FLOOR:
