@@ -77,23 +77,43 @@ def calculate_sky_state(turbidity, clouds):
         
         seg1_rgbw = [0, 0, 0, 0] # PWM OFF
 
-    # --- 2. THE LONG MORNING (RGB ONLY: -6° to 35°) ---
-    elif altitude_deg <= 35:
-        factor = (altitude_deg + 6) / 41.0  
+    # --- 2. TRUE DAWN (RGB ONLY: -6° to 10°) ---
+    # Rapid color shift. Sun breaks the horizon and quickly develops full color.
+    elif altitude_deg <= 10:
+        factor = (altitude_deg + 6) / 16.0  
         
         r = int(150 + (factor * 105)) 
-        g = int(30 + (factor * 200) + (turbidity * 3))
-        b = int(20 + (factor * 200) - (turbidity * 2))
+        g = int(30 + (factor * 180) + (turbidity * 3))
+        b = int(20 + (factor * 180) - (turbidity * 2))
         
         if clouds > 40:
             cloud_factor = (clouds - 40) / 60.0 
-            dim_multiplier = 1.0 - (cloud_factor * 0.65) 
+            dim_multiplier = 1.0 - (cloud_factor * 0.30) 
             
             r = int(r * dim_multiplier)
-            g = int(g * dim_multiplier * 0.8) 
-            b = int((b + 40) * dim_multiplier) 
+            g = int(g * dim_multiplier * 0.95) 
+            b = int(b * dim_multiplier) 
             
-        seg1_rgbw = [0, 0, 0, 0] # PWM STRICTLY OFF UNTIL ~8 AM
+        seg1_rgbw = [0, 0, 0, 0] # PWM OFF
+
+    # --- 2.5 THE MORNING HOLD (RGB ONLY: 10° to 35°) ---
+    # Color is fully developed. Holding bright daylight values while waiting for PWM.
+    elif altitude_deg <= 35:
+        # At 10 degrees, RGB is already at max brightness. 
+        # It holds this bright, slightly warm daylight until 35 degrees.
+        r = 255
+        g = int(210 + (turbidity * 1.5))
+        b = int(200 - (turbidity * 2.0))
+
+        if clouds > 40:
+            cloud_factor = (clouds - 40) / 60.0 
+            dim_multiplier = 1.0 - (cloud_factor * 0.30) 
+            
+            r = int(r * dim_multiplier)
+            g = int(g * dim_multiplier * 0.95) 
+            b = int(b * dim_multiplier)
+            
+        seg1_rgbw = [0, 0, 0, 0] # PWM STRICTLY OFF UNTIL 35°
 
     # --- 3. THE LATE PWM WAKE-UP (35° to 55°) ---
     elif altitude_deg <= 55:
