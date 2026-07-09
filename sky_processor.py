@@ -253,6 +253,7 @@ def main():
         wled_payload = {
             "on": True,
             "bri": master_brightness,
+            "transition": 20, # <--- (20 = 2 seconds)
             "seg": [
                 {
                     "id": 0,
