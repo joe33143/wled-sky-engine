@@ -2,7 +2,6 @@ import os
 import math
 import requests
 import json
-import time
 from datetime import datetime
 import pytz
 from suncalc import get_position
@@ -75,7 +74,7 @@ def calculate_sky_state(turbidity, clouds):
         g = int(15 + (moon_factor * 30))
         b = int(25 + (moon_factor * 50))
         
-        seg1_rgbw = [0, 0, 0, 0] # PWM OFF
+        seg1_rgbw = [0, 0, 0, 0] 
 
     # --- 2. TRUE DAWN (RGB ONLY: -6° to 10°) ---
     elif altitude_deg <= 10:
@@ -93,7 +92,7 @@ def calculate_sky_state(turbidity, clouds):
             g = int(g * dim_multiplier * 0.95) 
             b = int(b * dim_multiplier) 
             
-        seg1_rgbw = [0, 0, 0, 0] # PWM OFF
+        seg1_rgbw = [0, 0, 0, 0] 
 
     # --- 2.5 THE MORNING HOLD (RGB ONLY: 10° to 35°) ---
     elif altitude_deg <= 35:
@@ -109,5 +108,119 @@ def calculate_sky_state(turbidity, clouds):
             g = int(g * dim_multiplier * 0.95) 
             b = int(b * dim_multiplier)
             
-        seg1
+        seg1_rgbw = [0, 0, 0, 0] 
+
+    # --- 3. THE LATE PWM WAKE-UP (35° to 55°) ---
+    elif altitude_deg <= 55:
+        factor = (altitude_deg - 35) / 20.0  
+        
+        base_pwm = 105 + int(factor * 32) 
+        cloud_dim = int((clouds / 100.0) * 15)
+        
+        target_pwm = base_pwm - cloud_dim
+        if target_pwm < 105:
+            pwm_val = 0
+        else:
+            pwm_val = min(137, target_pwm)
             
+        seg1_rgbw = [pwm_val, pwm_val, pwm_val, pwm_val]
+        
+        r = 255
+        g = int(230 + (factor * 25) + (turbidity * 1.0))
+        b = int(220 + (factor * 35) - (turbidity * 2.0))
+        
+        if clouds > 25:
+            cloud_factor = (clouds - 25) / 75.0  
+            dim_multiplier = 1.0 - (cloud_factor * 0.5)
+            
+            r = int(r * dim_multiplier)
+            g = int(g * dim_multiplier * 0.9)
+            b = int((b + 30) * dim_multiplier)
+
+    # --- 4. FULL DAYTIME (Above 55°) ---
+    else:
+        base_pwm = 137
+        cloud_dim = int((clouds / 100.0) * 15)
+        
+        target_pwm = base_pwm - cloud_dim
+        if target_pwm < 105:
+            pwm_val = 0
+        else:
+            pwm_val = min(137, target_pwm)
+            
+        seg1_rgbw = [pwm_val, pwm_val, pwm_val, pwm_val]
+        
+        r = 255
+        g = int(255 + (turbidity * 1.5))
+        b = int(255 - (turbidity * 2.0))
+        
+        if clouds > 25:
+            cloud_factor = (clouds - 25) / 75.0  
+            dim_multiplier = 1.0 - (cloud_factor * 0.5)
+            
+            r = int(r * dim_multiplier)
+            g = int(g * dim_multiplier * 0.9)
+            b = int((b + 30) * dim_multiplier)
+
+    # ==========================================
+    # GLOBAL HARDWARE RGB CALIBRATION FILTER
+    # ==========================================
+    cal_r = 1.00  
+    cal_g = 0.85  
+    cal_b = 0.50  
+
+    raw_r = max(0, min(255, r))
+    raw_g = max(0, min(255, g))
+    raw_b = max(0, min(255, b))
+
+    # The point that was working:
+    max_val = max(raw_r, raw_g, raw_b)
+    if max_val < 100 and altitude_deg <= 0:
+        dimming_ratio = max_val / 100.0 
+        low_end_green_factor = 0.35 + (0.65 * dimming_ratio)
+        cal_g *= low_end_green_factor
+        
+        low_end_base_factor = 0.60 + (0.40 * dimming_ratio)
+        cal_r *= low_end_base_factor
+        cal_b *= low_end_base_factor
+
+    final_r = int(raw_r * cal_r)
+    final_g = int(raw_g * cal_g)
+    final_b = int(raw_b * cal_b)
+
+    seg0_rgbw = [max(0, min(255, final_r)), max(0, min(255, final_g)), max(0, min(255, final_b)), 0]
+    
+    return seg0_rgbw, seg1_rgbw
+
+def main():
+    if not WEATHER_API_KEY:
+        print("Error: Missing OpenWeather API Key.")
+        return
+
+    turbidity, clouds = get_weather_and_turbidity()
+    seg0_state, seg1_state = calculate_sky_state(turbidity, clouds)
+    
+    master_brightness = 255
+
+    if seg0_state == "TRIGGER_NIGHT_PRESET":
+        print("Dark night reached. Pulling custom profile dark_night_preset.json...")
+        try:
+            with open("dark_night_preset.json", "r") as f:
+                wled_payload = json.load(f)
+            
+            wled_payload["bri"] = master_brightness
+            if "seg" in wled_payload:
+                for segment in wled_payload["seg"]:
+                    segment["bri"] = 255 
+                
+                seg1_exists = False
+                for segment in wled_payload["seg"]:
+                    if segment.get("id") == 1:
+                        segment["bri"] = 255
+                        segment["col"] = [[0, 0, 0, 0]]
+                        seg1_exists = True
+                        break
+                
+                if not seg1_exists:
+                    wled_payload["seg
+    
