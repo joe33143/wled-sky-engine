@@ -94,7 +94,7 @@ def calculate_sky_state(turbidity, clouds):
             
         seg1_rgbw = [0, 0, 0, 0] 
 
-    # --- 2.5 THE MORNING HOLD (RGB ONLY: 10° to 35°) ---
+    # --- 2.5. THE MORNING HOLD (RGB ONLY: 10° to 35°) ---
     elif altitude_deg <= 35:
         r = 255
         g = int(210 + (turbidity * 1.5))
@@ -173,8 +173,10 @@ def calculate_sky_state(turbidity, clouds):
     raw_g = max(0, min(255, g))
     raw_b = max(0, min(255, b))
 
-    # The point that was working:
+    # DYNAMIC LOW-END CURVE
     max_val = max(raw_r, raw_g, raw_b)
+    
+    # STRICT FIX: Only applies when the sun is at or below the horizon
     if max_val < 100 and altitude_deg <= 0:
         dimming_ratio = max_val / 100.0 
         low_end_green_factor = 0.35 + (0.65 * dimming_ratio)
@@ -202,6 +204,7 @@ def main():
     
     master_brightness = 255
 
+    # --- REPOSITORY HOSTED PRESET LOADING MECHANISM ---
     if seg0_state == "TRIGGER_NIGHT_PRESET":
         print("Dark night reached. Pulling custom profile dark_night_preset.json...")
         try:
@@ -222,5 +225,61 @@ def main():
                         break
                 
                 if not seg1_exists:
-                    wled_payload["seg
+                    wled_payload["seg"].append({"id": 1, "bri": 255, "col": [[0, 0, 0, 0]]})
+                
+        except Exception as e:
+            print(f"Preset file reading missed. Error: {e}")
+            wled_payload = {
+                "on": True,
+                "bri": master_brightness,
+                "seg": [
+                    {"id": 0, "start": 0, "stop": 90, "bri": 255, "col": [[5, 5, 20, 0]]},
+                    {"id": 1, "start": 90, "stop": 180, "bri": 255, "col": [[0, 0, 0, 0]]}
+                ]
+            }
+            
+    else:
+        # THE CLEAN SINGLE PAYLOAD - No presets, no fx overrides, just raw colors.
+        wled_payload = {
+            "on": True,
+            "bri": master_brightness,
+            "seg": [
+                {
+                    "id": 0,
+                    "bri": 255,
+                    "col": [seg0_state] 
+                },
+                {
+                    "id": 1,
+                    "bri": 255,
+                    "col": [seg1_state]
+                }
+            ]
+        }
+
+    # --- MQTT PUBLISHING ALGORITHM ---
+    try:
+        client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, "VaranasiSky_Publisher_Public")
+    except AttributeError:
+        client = mqtt.Client("VaranasiSky_Publisher_Public")
     
+    print("Connecting to Public HiveMQ...")
+    try:
+        client.connect(MQTT_BROKER, MQTT_PORT, 60)
+        client.loop_start()
+        
+        print(f"Publishing payload to topic {MQTT_TOPIC}...")
+        
+        info = client.publish(MQTT_TOPIC, json.dumps(wled_payload), qos=1)
+        info.wait_for_publish() 
+        
+        client.loop_stop()
+        client.disconnect()
+        
+        print(f"Sync complete. Seg 0 (RGB): {seg0_state}, Seg 1 (PWM): {seg1_state}")
+    except Exception as e:
+        print(f"MQTT Operation failed: {e}")
+
+if __name__ == "__main__":
+    main()
+        
