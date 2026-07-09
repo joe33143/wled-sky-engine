@@ -76,50 +76,86 @@ def calculate_sky_state(turbidity, clouds):
         
         seg1_rgbw = [0, 0, 0, 0] # PWM OFF
 
-    # --- 2. THE COLOR HOLD (-6° to 10°) ---
-    elif altitude_deg <= 10:
-        factor = (altitude_deg + 6) / 16.0  
+    # --- 2. THE LONG MORNING (RGB ONLY: -6° to 35°) ---
+    # Holds the PWM off until roughly 8:00 AM in summer.
+    # RGB strip handles the entire dawn-to-morning transition.
+    elif altitude_deg <= 35:
+        factor = (altitude_deg + 6) / 41.0  # Scales across the massive 41-degree morning gap
         
+        # Red starts at 150 at dawn, reaches 255 by 8:00 AM
         r = int(150 + (factor * 105)) 
-        g = int(30 + (factor * 120) + (turbidity * 3))
-        b = int(20 + (factor * 120) - (turbidity * 2))
+        # Green and Blue steadily climb to create a bright, neutral white by 8:00 AM
+        g = int(30 + (factor * 200) + (turbidity * 3))
+        b = int(20 + (factor * 200) - (turbidity * 2))
         
         # TRUE OVERCAST DESATURATION
         if clouds > 40:
             cloud_factor = (clouds - 40) / 60.0 
-            # Heavily dim the overall light (drops up to 65% brightness)
             dim_multiplier = 1.0 - (cloud_factor * 0.65) 
             
-            # Crush everything down to a dim, gloomy slate-grey
             r = int(r * dim_multiplier)
-            g = int(g * dim_multiplier * 0.8) # Extra penalty to green to prevent swampiness
-            b = int((b + 40) * dim_multiplier) # Slight blue bump to keep it looking like a morning sky
+            g = int(g * dim_multiplier * 0.8) 
+            b = int((b + 40) * dim_multiplier) 
             
-        seg1_rgbw = [0, 0, 0, 0] # PWM remains OFF
+        seg1_rgbw = [0, 0, 0, 0] # PWM STRICTLY OFF UNTIL 8 AM
 
-    # --- 3. THE WIDE RAMP (10° to 35°) ---
-    elif altitude_deg <= 35:
-        factor = (altitude_deg - 10) / 25.0  
+    # --- 3. THE LATE PWM WAKE-UP (35° to 55°) ---
+    # Between 8:00 AM and 10:00 AM. PWM finally ramps up.
+    elif altitude_deg <= 55:
+        factor = (altitude_deg - 35) / 20.0  
         
-        # PWM strictly scales within your hardware's 105-137 range
         base_pwm = 105 + int(factor * 32) 
         cloud_dim = int((clouds / 100.0) * 15)
-        pwm_val = max(105, min(137, base_pwm - cloud_dim))
+        
+        # The Trapdoor: Stays off if clouds drop it below the hardware floor
+        target_pwm = base_pwm - cloud_dim
+        if target_pwm < 105:
+            pwm_val = 0
+        else:
+            pwm_val = min(137, target_pwm)
+            
         seg1_rgbw = [pwm_val, pwm_val, pwm_val, pwm_val]
         
+        # RGB holds peak daytime brightness, balancing color
         r = 255
-        g = int(210 + (factor * 45) + (turbidity * 1.0))
-        b = int(180 + (factor * 75) - (turbidity * 2.0))
+        g = int(230 + (factor * 25) + (turbidity * 1.0))
+        b = int(220 + (factor * 35) - (turbidity * 2.0))
         
-        # TRUE OVERCAST DESATURATION FOR DAYTIME
+        # OVERCAST DAYTIME DESATURATION
         if clouds > 25:
             cloud_factor = (clouds - 25) / 75.0  
-            # Drops up to 50% brightness on heavy overcast days
             dim_multiplier = 1.0 - (cloud_factor * 0.5)
             
             r = int(r * dim_multiplier)
             g = int(g * dim_multiplier * 0.9)
-            b = int((b + 30) * dim_multiplier) 
+            b = int((b + 30) * dim_multiplier)
+
+    # --- 4. FULL DAYTIME (Above 55°) ---
+    # Sun is peaking. PWM locked to max hardware limit.
+    else:
+        base_pwm = 137
+        cloud_dim = int((clouds / 100.0) * 15)
+        
+        target_pwm = base_pwm - cloud_dim
+        if target_pwm < 105:
+            pwm_val = 0
+        else:
+            pwm_val = min(137, target_pwm)
+            
+        seg1_rgbw = [pwm_val, pwm_val, pwm_val, pwm_val]
+        
+        r = 255
+        g = int(255 + (turbidity * 1.5))
+        b = int(255 - (turbidity * 2.0))
+        
+        if clouds > 25:
+            cloud_factor = (clouds - 25) / 75.0  
+            dim_multiplier = 1.0 - (cloud_factor * 0.5)
+            
+            r = int(r * dim_multiplier)
+            g = int(g * dim_multiplier * 0.9)
+            b = int((b + 30) * dim_multiplier)
+ 
  
     # --- 4. FULL DAYTIME (Above 35°) ---
     else:
