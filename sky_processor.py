@@ -173,10 +173,7 @@ def calculate_sky_state(turbidity, clouds):
     raw_g = max(0, min(255, g))
     raw_b = max(0, min(255, b))
 
-    # DYNAMIC LOW-END CURVE
     max_val = max(raw_r, raw_g, raw_b)
-    
-    # STRICT FIX: Only applies when the sun is at or below the horizon
     if max_val < 100 and altitude_deg <= 0:
         dimming_ratio = max_val / 100.0 
         low_end_green_factor = 0.35 + (0.65 * dimming_ratio)
@@ -239,7 +236,7 @@ def main():
             }
             
     else:
-        # THE CLEAN SINGLE PAYLOAD - No presets, no fx overrides, just raw colors.
+        # THE CLEAN SINGLE PAYLOAD - Now with the Solid Effect lock
         wled_payload = {
             "on": True,
             "bri": master_brightness,
@@ -247,11 +244,13 @@ def main():
                 {
                     "id": 0,
                     "bri": 255,
+                    "fx": 0,  # Forces Solid mode, removes any lingering effects
                     "col": [seg0_state] 
                 },
                 {
                     "id": 1,
                     "bri": 255,
+                    "fx": 0,  # Forces Solid mode, removes any lingering effects
                     "col": [seg1_state]
                 }
             ]
@@ -282,4 +281,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-        
