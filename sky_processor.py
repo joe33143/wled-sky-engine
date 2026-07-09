@@ -76,42 +76,52 @@ def calculate_sky_state(turbidity, clouds):
         
         seg1_rgbw = [0, 0, 0, 0] # PWM OFF
 
-    # --- 2. THE COLOR HOLD (-6° to 15°) ---
-    elif altitude_deg <= 15:
-        factor = (altitude_deg + 6) / 21.0  
+    # --- 2. THE COLOR HOLD (-6° to 10°) ---
+    # Sun is breaking the horizon. Red starts high, but Green and Blue 
+    # aggressively ramp up to turn the neon dawn into a warm morning.
+    elif altitude_deg <= 10:
+        factor = (altitude_deg + 6) / 16.0  
         
-        r = 255
-        g = int(40 + (factor * 80) + (turbidity * 4))
-        b = int(10 + (factor * 20) - (turbidity * 2))
+        r = int(150 + (factor * 105)) 
+        g = int(30 + (factor * 180) + (turbidity * 3))
+        b = int(20 + (factor * 160) - (turbidity * 2))
         
+        # THE OVERCAST DESATURATION FIX
         if clouds > 40:
-            g = int(g * 0.7)
-            b = int(b * 1.5)
+            cloud_factor = (clouds - 40) / 60.0 # Scales from 0.0 to 1.0 based on cloud thickness
             
-        seg1_rgbw = [0, 0, 0, 0] # PWM OFF
+            # Crush the red to stop the neon glow and reduce overall brightness
+            r = int(r * (1.0 - (cloud_factor * 0.45))) 
+            
+            # Boost Green and heavily boost Blue to wash the color into a diffused gray
+            g = int(g + (cloud_factor * 50)) 
+            b = int(b + (cloud_factor * 130))
+            
+        seg1_rgbw = [0, 0, 0, 0] # PWM remains OFF
 
-    # --- 3. THE WIDE RAMP (15° to 35°) ---
+    # --- 3. THE WIDE RAMP (10° to 35°) ---
+    # Broad daylight is starting. PWM wakes up within the hardware constraints.
     elif altitude_deg <= 35:
-        factor = (altitude_deg - 15) / 20.0  
+        factor = (altitude_deg - 10) / 25.0  
         
-        # FIX: PWM now strictly scales within your hardware's 105-137 range
+        # PWM strictly scales within your hardware's 105-137 range
         base_pwm = 105 + int(factor * 32) 
-        
-        # Clouds subtract a max of 15 steps so it never accidentally drops below 105
         cloud_dim = int((clouds / 100.0) * 15)
         pwm_val = max(105, min(137, base_pwm - cloud_dim))
         seg1_rgbw = [pwm_val, pwm_val, pwm_val, pwm_val]
         
+        # RGB strip crossfades into crisp daylight
         r = 255
-        g = int(120 + (factor * 80) + (turbidity * 1.5))
-        b = int(30 + (factor * 150) - (turbidity * 2.0))
+        g = int(210 + (factor * 45) + (turbidity * 1.0))
+        b = int(180 + (factor * 75) - (turbidity * 2.0))
         
+        # Overcast desaturation for daytime
         if clouds > 25:
             cloud_factor = (clouds - 25) / 75.0  
             r = int(r * (1.0 - (cloud_factor * 0.3)))
             g = int(g * (1.0 - (cloud_factor * 0.1)))
-            b = int(b + (cloud_factor * 40)) 
-
+            b = int(b + (cloud_factor * 60)) 
+ 
     # --- 4. FULL DAYTIME (Above 35°) ---
     else:
         # FIX: Hard ceiling locked at 137
