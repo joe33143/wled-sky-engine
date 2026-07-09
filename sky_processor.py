@@ -115,8 +115,8 @@ def calculate_sky_state(turbidity, clouds):
         factor = (altitude_deg - 35) / 20.0  
         
         # --- PWM SCALING CONTROLS ---
-        PWM_FLOOR = 110 
-        PWM_MAX = 155   # <--- TWEAK THIS NUMBER: Lowers the maximum daytime brightness
+        PWM_FLOOR = 105 
+        PWM_MAX = 135   # <--- TWEAK THIS NUMBER: Lowers the maximum daytime brightness
         PWM_RANGE = PWM_MAX - PWM_FLOOR
         
         # Scales smoothly from 75 up to your chosen MAX
@@ -148,8 +148,8 @@ def calculate_sky_state(turbidity, clouds):
     # --- 4. FULL DAYTIME (Above 55°) ---
     else:
         # --- PWM SCALING CONTROLS ---
-        PWM_FLOOR = 110
-        PWM_MAX = 155   # <--- MUST MATCH THE NUMBER IN PHASE 3
+        PWM_FLOOR = 105
+        PWM_MAX = 135   # <--- MUST MATCH THE NUMBER IN PHASE 3
         
         base_pwm = PWM_MAX
         cloud_dim = int((clouds / 100.0) * 40)
