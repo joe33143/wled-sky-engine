@@ -43,7 +43,7 @@ def main():
             }
             
     else:
-        # Standard Active Tracking Flow
+        # --- THE CLEAN SINGLE PAYLOAD ---
         wled_payload = {
             "on": True,
             "bri": master_brightness,
@@ -51,18 +51,19 @@ def main():
                 {
                     "id": 0,
                     "bri": 255,
-                    "fx": 0, 
+                    "fx": 0, # Kills any lingering preset effects, forces solid color
                     "col": [seg0_state] 
                 },
                 {
                     "id": 1,
                     "bri": 255,
-                    "fx": 0, 
+                    "fx": 0, # Kills any lingering preset effects, forces solid color
                     "col": [seg1_state]
                 }
             ]
         }
 
+    # --- MQTT PUBLISHING ALGORITHM ---
     try:
         client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, "VaranasiSky_Publisher_Public")
     except AttributeError:
@@ -73,25 +74,19 @@ def main():
         client.connect(MQTT_BROKER, MQTT_PORT, 60)
         client.loop_start()
         
-        # Log restored exactly how you had it
         print(f"Publishing payload to topic {MQTT_TOPIC}...")
         
-        # --- THE DOUBLE-STRIKE FIX ---
-        # If running daytime colors, send the exact same payload twice 
-        # with a 0.5s delay to force WLED to break the preset and accept the color.
-        if seg0_state != "TRIGGER_NIGHT_PRESET":
-            info1 = client.publish(MQTT_TOPIC, json.dumps(wled_payload), qos=1)
-            info1.wait_for_publish()
-            time.sleep(0.5)
-            
-        info2 = client.publish(MQTT_TOPIC, json.dumps(wled_payload), qos=1)
-        info2.wait_for_publish() 
+        # Back to a single, reliable push
+        info = client.publish(MQTT_TOPIC, json.dumps(wled_payload), qos=1)
+        info.wait_for_publish() 
         
         client.loop_stop()
         client.disconnect()
         
-        # The RGB math log you rely on is back
         print(f"Sync complete. Seg 0 (RGB): {seg0_state}, Seg 1 (PWM): {seg1_state}")
     except Exception as e:
         print(f"MQTT Operation failed: {e}")
-        
+
+if __name__ == "__main__":
+    main()
+    
