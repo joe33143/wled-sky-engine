@@ -12,8 +12,8 @@ WEATHER_API_KEY = os.getenv("OPENWEATHER_API_KEY")
 MQTT_BROKER = "broker.hivemq.com"
 MQTT_PORT = 1883
 MQTT_TOPIC = "joe33143/wled-sky/api"
-LAT = 25.3176                     
-LON = 83.0062                     
+LAT = 25.3176
+LON = 83.0062
 
 def get_weather_and_turbidity():
     pollution_url = f"https://api.openweathermap.org/data/2.5/air_pollution?lat={LAT}&lon={LON}&appid={WEATHER_API_KEY}"
@@ -68,21 +68,42 @@ def calculate_sky_state(turbidity, clouds):
             return "TRIGGER_NIGHT_PRESET", [0, 0, 0, 0]
         
         if clouds > 30:
-            moon_factor *= (1.0 - ((clouds - 30) / 70.0) * 0.5)
+            moon_factor *= (1.0 - ((clouds - 30) / 70.0) * 0.3)
             
-        r = int(10 + (moon_factor * 20))
-        g = int(15 + (moon_factor * 30))
-        b = int(25 + (moon_factor * 50))
+        r = int(35 + (moon_factor * 30))
+        g = int(45 + (moon_factor * 40))
+        b = int(60 + (moon_factor * 60))
         
+        seg1_rgbw = [0, 0, 0, 0]
+
+    # --- 2. CIVIL TWILIGHT (-6° to 0°) ---
+    elif altitude_deg <= 0:
+        factor = (altitude_deg + 6) / 6.0  
+        
+        night_r, night_g, night_b = 15, 20, 30
+        sun_r, sun_g, sun_b = 130, 60, 50
+        
+        r = int(night_r + (factor * (sun_r - night_r)))
+        g = int(night_g + (factor * (sun_g - night_g)) + (turbidity * 1.0))
+        b = int(night_b + (factor * (sun_b - night_b)))
+        
+        if clouds > 40:
+            cloud_factor = (clouds - 40) / 60.0 
+            dim_multiplier = 1.0 - (cloud_factor * 0.40) 
+            
+            r = int(r * dim_multiplier)
+            g = int(g * dim_multiplier) 
+            b = int((b + 10) * dim_multiplier) 
+            
         seg1_rgbw = [0, 0, 0, 0] 
 
-    # --- 2. TRUE DAWN (RGB ONLY: -6° to 10°) ---
+    # --- 3. GOLDEN HOUR / HORIZON (0° to 10°) ---
     elif altitude_deg <= 10:
-        factor = (altitude_deg + 6) / 16.0  
+        factor = altitude_deg / 10.0  
         
-        r = int(150 + (factor * 105)) 
-        g = int(30 + (factor * 180) + (turbidity * 3))
-        b = int(20 + (factor * 180) - (turbidity * 2))
+        r = int(130 + (factor * 125)) 
+        g = int(60 + (factor * 150) + (turbidity * 2.0))
+        b = int(50 + (factor * 150) - (turbidity * 1.5))
         
         if clouds > 40:
             cloud_factor = (clouds - 40) / 60.0 
@@ -94,7 +115,7 @@ def calculate_sky_state(turbidity, clouds):
             
         seg1_rgbw = [0, 0, 0, 0] 
 
-    # --- 2.5. THE MORNING HOLD (RGB ONLY: 10° to 35°) ---
+    # --- 4. THE MORNING HOLD (RGB ONLY: 10° to 35°) ---
     elif altitude_deg <= 35:
         r = 255
         g = int(210 + (turbidity * 1.5))
@@ -110,18 +131,15 @@ def calculate_sky_state(turbidity, clouds):
             
         seg1_rgbw = [0, 0, 0, 0] 
 
-    # --- 3. THE LATE PWM WAKE-UP (35° to 55°) ---
+    # --- 5. THE LATE PWM WAKE-UP (RESTORED: 35° to 55°) ---
     elif altitude_deg <= 55:
         factor = (altitude_deg - 35) / 20.0  
         
-        # --- PWM SCALING CONTROLS ---
-        PWM_FLOOR = 105 
-        PWM_MAX = 135   # <--- TWEAK THIS NUMBER: Lowers the maximum daytime brightness
+        PWM_FLOOR = 105
+        PWM_MAX = 135
         PWM_RANGE = PWM_MAX - PWM_FLOOR
         
-        # Scales smoothly from 75 up to your chosen MAX
         base_pwm = PWM_FLOOR + int(factor * PWM_RANGE) 
-        
         cloud_dim = int((clouds / 100.0) * 20) 
         
         target_pwm = base_pwm - cloud_dim
@@ -132,166 +150,9 @@ def calculate_sky_state(turbidity, clouds):
             
         seg1_rgbw = [pwm_val, pwm_val, pwm_val, pwm_val]
         
-        # FILTER MODE CROSSFADE:
+        # FILTER MODE CROSSFADE
         r = int(255 - (factor * 55))       
         g = int(210 - (factor * 60) + (turbidity * 1.5))  
         b = max(0, int(200 - (factor * 200) - (turbidity * 2.0))) 
         
         if clouds > 25:
-            cloud_factor = (clouds - 25) / 75.0  
-            dim_multiplier = 1.0 - (cloud_factor * 0.5)
-            
-            r = int(r * dim_multiplier)
-            g = int(g * dim_multiplier * 0.9)
-            b = int((b + 30) * dim_multiplier)
-
-    # --- 4. FULL DAYTIME (Above 55°) ---
-    else:
-        # --- PWM SCALING CONTROLS ---
-        PWM_FLOOR = 105
-        PWM_MAX = 135   # <--- MUST MATCH THE NUMBER IN PHASE 3
-        
-        base_pwm = PWM_MAX
-        cloud_dim = int((clouds / 100.0) * 20)
-        
-        target_pwm = base_pwm - cloud_dim
-        if target_pwm < PWM_FLOOR:
-            pwm_val = 0
-        else:
-            pwm_val = min(PWM_MAX, target_pwm)
-            
-        seg1_rgbw = [pwm_val, pwm_val, pwm_val, pwm_val]
-        
-        # FULL FILTER MODE:
-        r = 200
-        g = int(150 + (turbidity * 1.5))
-        b = 0  
-        
-        if clouds > 25:
-            cloud_factor = (clouds - 25) / 75.0  
-            dim_multiplier = 1.0 - (cloud_factor * 0.5)
-            
-            r = int(r * dim_multiplier)
-            g = int(g * dim_multiplier * 0.9)
-            b = int(30 * dim_multiplier)
-
-    # ==========================================
-    # GLOBAL HARDWARE RGB CALIBRATION FILTER
-    # ==========================================
-    cal_r = 1.00  
-    cal_g = 0.85  
-    cal_b = 0.50  
-
-    raw_r = max(0, min(255, r))
-    raw_g = max(0, min(255, g))
-    raw_b = max(0, min(255, b))
-
-    max_val = max(raw_r, raw_g, raw_b)
-    if max_val < 100 and altitude_deg <= 0:
-        dimming_ratio = max_val / 100.0 
-        low_end_green_factor = 0.35 + (0.65 * dimming_ratio)
-        cal_g *= low_end_green_factor
-        
-        low_end_base_factor = 0.60 + (0.40 * dimming_ratio)
-        cal_r *= low_end_base_factor
-        cal_b *= low_end_base_factor
-
-    final_r = int(raw_r * cal_r)
-    final_g = int(raw_g * cal_g)
-    final_b = int(raw_b * cal_b)
-
-    seg0_rgbw = [max(0, min(255, final_r)), max(0, min(255, final_g)), max(0, min(255, final_b)), 0]
-    
-    return seg0_rgbw, seg1_rgbw
-
-def main():
-    if not WEATHER_API_KEY:
-        print("Error: Missing OpenWeather API Key.")
-        return
-
-    turbidity, clouds = get_weather_and_turbidity()
-    seg0_state, seg1_state = calculate_sky_state(turbidity, clouds)
-    
-    master_brightness = 255
-
-    # --- REPOSITORY HOSTED PRESET LOADING MECHANISM ---
-    if seg0_state == "TRIGGER_NIGHT_PRESET":
-        print("Dark night reached. Pulling custom profile dark_night_preset.json...")
-        try:
-            with open("dark_night_preset.json", "r") as f:
-                wled_payload = json.load(f)
-            
-            wled_payload["bri"] = master_brightness
-            if "seg" in wled_payload:
-                for segment in wled_payload["seg"]:
-                    segment["bri"] = 255 
-                
-                seg1_exists = False
-                for segment in wled_payload["seg"]:
-                    if segment.get("id") == 1:
-                        segment["bri"] = 255
-                        segment["col"] = [[0, 0, 0, 0]]
-                        seg1_exists = True
-                        break
-                
-                if not seg1_exists:
-                    wled_payload["seg"].append({"id": 1, "bri": 255, "col": [[0, 0, 0, 0]]})
-                
-        except Exception as e:
-            print(f"Preset file reading missed. Error: {e}")
-            wled_payload = {
-                "on": True,
-                "bri": master_brightness,
-                "seg": [
-                    {"id": 0, "start": 0, "stop": 90, "bri": 255, "col": [[5, 5, 20, 0]]},
-                    {"id": 1, "start": 90, "stop": 180, "bri": 255, "col": [[0, 0, 0, 0]]}
-                ]
-            }
-            
-    else:
-        # THE CLEAN SINGLE PAYLOAD - Now with the Solid Effect lock
-        wled_payload = {
-            "on": True,
-            "bri": master_brightness,
-            "transition": 20, # <--- (20 = 2 seconds)
-            "seg": [
-                {
-                    "id": 0,
-                    "bri": 255,
-                    "fx": 0,  # Forces Solid mode, removes any lingering effects
-                    "col": [seg0_state] 
-                },
-                {
-                    "id": 1,
-                    "bri": 255,
-                    "fx": 0,  # Forces Solid mode, removes any lingering effects
-                    "col": [seg1_state]
-                }
-            ]
-        }
-
-    # --- MQTT PUBLISHING ALGORITHM ---
-    try:
-        client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, "VaranasiSky_Publisher_Public")
-    except AttributeError:
-        client = mqtt.Client("VaranasiSky_Publisher_Public")
-    
-    print("Connecting to Public HiveMQ...")
-    try:
-        client.connect(MQTT_BROKER, MQTT_PORT, 60)
-        client.loop_start()
-        
-        print(f"Publishing payload to topic {MQTT_TOPIC}...")
-        
-        info = client.publish(MQTT_TOPIC, json.dumps(wled_payload), qos=1)
-        info.wait_for_publish() 
-        
-        client.loop_stop()
-        client.disconnect()
-        
-        print(f"Sync complete. Seg 0 (RGB): {seg0_state}, Seg 1 (PWM): {seg1_state}")
-    except Exception as e:
-        print(f"MQTT Operation failed: {e}")
-
-if __name__ == "__main__":
-    main()
