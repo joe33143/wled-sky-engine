@@ -156,3 +156,156 @@ def calculate_sky_state(turbidity, clouds):
         b = max(0, int(200 - (factor * 200) - (turbidity * 2.0))) 
         
         if clouds > 25:
+            cloud_factor = (clouds - 25) / 75.0  
+            dim_multiplier = 1.0 - (cloud_factor * 0.5)
+            
+            r = int(r * dim_multiplier)
+            g = int(g * dim_multiplier * 0.9)
+            b = int((b + 30) * dim_multiplier)
+
+    # --- 6. FULL DAYTIME (Above 55°) ---
+    else:
+        PWM_FLOOR = 105
+        PWM_MAX = 135   
+        
+        base_pwm = PWM_MAX
+        cloud_dim = int((clouds / 100.0) * 20)
+        
+        target_pwm = base_pwm - cloud_dim
+        if target_pwm < PWM_FLOOR:
+            pwm_val = 0
+        else:
+            pwm_val = min(PWM_MAX, target_pwm)
+            
+        seg1_rgbw = [pwm_val, pwm_val, pwm_val, pwm_val]
+        
+        # FULL FILTER MODE
+        r = 200
+        g = int(150 + (turbidity * 1.5))
+        b = 0  
+        
+        if clouds > 25:
+            cloud_factor = (clouds - 25) / 75.0  
+            dim_multiplier = 1.0 - (cloud_factor * 0.5)
+            
+            r = int(r * dim_multiplier)
+            g = int(g * dim_multiplier * 0.9)
+            b = int(30 * dim_multiplier)
+
+    # ==========================================
+    # GLOBAL HARDWARE RGB CALIBRATION FILTER
+    # ==========================================
+    cal_r = 1.00  
+    cal_g = 0.85  
+    cal_b = 0.50  
+
+    raw_r = max(0, min(255, r))
+    raw_g = max(0, min(255, g))
+    raw_b = max(0, min(255, b))
+
+    max_val = max(raw_r, raw_g, raw_b)
+    if max_val < 100 and altitude_deg <= 0:
+        dimming_ratio = max_val / 100.0 
+        low_end_green_factor = 0.35 + (0.65 * dimming_ratio)
+        cal_g *= low_end_green_factor
+        
+        low_end_base_factor = 0.60 + (0.40 * dimming_ratio)
+        cal_r *= low_end_base_factor
+        cal_b *= low_end_base_factor
+
+    final_r = int(raw_r * cal_r)
+    final_g = int(raw_g * cal_g)
+    final_b = int(raw_b * cal_b)
+
+    seg0_rgbw = [max(0, min(255, final_r)), max(0, min(255, final_g)), max(0, min(255, final_b)), 0]
+    
+    return seg0_rgbw, seg1_rgbw
+
+def main():
+    if not WEATHER_API_KEY:
+        print("Error: Missing OpenWeather API Key.")
+        return
+
+    turbidity, clouds = get_weather_and_turbidity()
+    seg0_state, seg1_state = calculate_sky_state(turbidity, clouds)
+    
+    master_brightness = 255
+
+    if seg0_state == "TRIGGER_NIGHT_PRESET":
+        print("Dark night reached. Pulling custom profile dark_night_preset.json...")
+        try:
+            with open("dark_night_preset.json", "r") as f:
+                wled_payload = json.load(f)
+            
+            wled_payload["bri"] = master_brightness
+            if "seg" in wled_payload:
+                for segment in wled_payload["seg"]:
+                    segment["bri"] = 255 
+                
+                seg1_exists = False
+                for segment in wled_payload["seg"]:
+                    if segment.get("id") == 1:
+                        segment["bri"] = 255
+                        segment["col"] = [[0, 0, 0, 0]]
+                        seg1_exists = True
+                        break
+                
+                if not seg1_exists:
+                    wled_payload["seg"].append({"id": 1, "bri": 255, "col": [[0, 0, 0, 0]]})
+                
+        except Exception as e:
+            print(f"Preset file reading missed. Error: {e}")
+            wled_payload = {
+                "on": True,
+                "bri": master_brightness,
+                "seg": [
+                    {"id": 0, "start": 0, "stop": 90, "bri": 255, "col": [[5, 5, 20, 0]]},
+                    {"id": 1, "start": 90, "stop": 180, "bri": 255, "col": [[0, 0, 0, 0]]}
+                ]
+            }
+            
+    else:
+        wled_payload = {
+            "on": True,
+            "bri": master_brightness,
+            "transition": 20, 
+            "seg": [
+                {
+                    "id": 0,
+                    "bri": 255,
+                    "fx": 0,  
+                    "col": [seg0_state] 
+                },
+                {
+                    "id": 1,
+                    "bri": 255,
+                    "fx": 0,  
+                    "col": [seg1_state]
+                }
+            ]
+        }
+
+    try:
+        client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, "VaranasiSky_Publisher_Public")
+    except AttributeError:
+        client = mqtt.Client("VaranasiSky_Publisher_Public")
+    
+    print("Connecting to Public HiveMQ...")
+    try:
+        client.connect(MQTT_BROKER, MQTT_PORT, 60)
+        client.loop_start()
+        
+        print(f"Publishing payload to topic {MQTT_TOPIC}...")
+        
+        info = client.publish(MQTT_TOPIC, json.dumps(wled_payload), qos=1)
+        info.wait_for_publish() 
+        
+        client.loop_stop()
+        client.disconnect()
+        
+        print(f"Sync complete. Seg 0 (RGB): {seg0_state}, Seg 1 (PWM): {seg1_state}")
+    except Exception as e:
+        print(f"MQTT Operation failed: {e}")
+
+if __name__ == "__main__":
+    main()
