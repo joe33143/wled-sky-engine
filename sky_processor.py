@@ -121,13 +121,16 @@ def calculate_sky_state(turbidity, clouds):
         g = int(210 + (turbidity * 1.5))
         b = int(200 - (turbidity * 2.0))
 
-        if clouds > 40:
-            cloud_factor = (clouds - 40) / 60.0 
-            dim_multiplier = 1.0 - (cloud_factor * 0.30) 
+        if clouds > 25:
+            cloud_factor = (clouds - 25) / 75.0  
+            dim_multiplier = 1.0 - (cloud_factor * 0.5)
             
-            r = int(r * dim_multiplier)
-            g = int(g * dim_multiplier * 0.95) 
-            b = int(b * dim_multiplier)
+            # --- GLOOMY OVERCAST SHIFT ---
+            # Clouds block the warm direct sun. We aggressively drain the Red 
+            # and inject Blue back into the room to simulate a cool, gloomy sky.
+            r = int(r * dim_multiplier * (1.0 - (cloud_factor * 0.45))) 
+            g = int(g * dim_multiplier * (1.0 - (cloud_factor * 0.15))) 
+            b = int(b * dim_multiplier) + int(cloud_factor * 180) 
             
         seg1_rgbw = [0, 0, 0, 0] 
 
@@ -159,9 +162,12 @@ def calculate_sky_state(turbidity, clouds):
             cloud_factor = (clouds - 25) / 75.0  
             dim_multiplier = 1.0 - (cloud_factor * 0.5)
             
-            r = int(r * dim_multiplier)
-            g = int(g * dim_multiplier * 0.9)
-            b = int((b + 30) * dim_multiplier)
+            # --- GLOOMY OVERCAST SHIFT ---
+            # Clouds block the warm direct sun. We aggressively drain the Red 
+            # and inject Blue back into the room to simulate a cool, gloomy sky.
+            r = int(r * dim_multiplier * (1.0 - (cloud_factor * 0.45))) 
+            g = int(g * dim_multiplier * (1.0 - (cloud_factor * 0.15))) 
+            b = int(b * dim_multiplier) + int(cloud_factor * 180) 
 
     # --- 6. FULL DAYTIME (Above 55°) ---
     else:
