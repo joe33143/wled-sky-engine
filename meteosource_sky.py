@@ -193,7 +193,7 @@ def calculate_sky_state(turbidity, clouds):
     # ==========================================
     cal_r = 1.00  
     cal_g = 0.85  
-    cal_b = 0.50  
+    cal_b = 0.60  
 
     raw_r = max(0, min(255, r))
     raw_g = max(0, min(255, g))
