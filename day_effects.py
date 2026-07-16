@@ -15,8 +15,8 @@ def get_day_payload(r, g, b, pwm, clouds, base_phase_name):
     
     # --- EFFECT SELECTION ---
     if clouds >= 25:
-        # Cloudy Day: Rolling Aurora
-        fx = 30
+        # Cloudy Day: Aurora Effect (Updated for WLED 16)
+        fx = 38
         sx = int(20 + (c * 50)) # Rolls faster with more clouds
         ix = 150 
         
