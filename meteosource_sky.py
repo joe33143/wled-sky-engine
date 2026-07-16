@@ -180,6 +180,16 @@ def main():
     finally:
         # Ensure we always disconnect cleanly
         client.disconnect()
-
+# Force a blocking wait until the broker acknowledges the message receipt
+        print(f"Publishing Alt: {alt:.2f}° | RGB: [{r},{g},{b}] | PWM: {pwm}")
+        publish_result = client.publish(MQTT_TOPIC, json.dumps(payload), qos=1)
+        
+        # This blocks execution up to 10 seconds to ensure the network stack clears
+        publish_result.wait_for_publish(timeout=10) 
+        
+        if publish_result.is_published():
+            print("Broker Confirmed: Payload delivered successfully.")
+        else:
+            print("Network Error: Packet queued but broker rejected/dropped it.")
 if __name__ == "__main__":
     main()
