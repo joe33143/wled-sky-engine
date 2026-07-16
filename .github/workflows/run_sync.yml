@@ -18,6 +18,7 @@ jobs:
       - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
+          pip install ephem paho-mqtt requests pytz
           pip install requests suncalc pytz paho-mqtt
 
       - name: Run Sky Processor
