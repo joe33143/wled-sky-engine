@@ -16,7 +16,7 @@ def get_day_payload(r, g, b, pwm, clouds, base_phase_name):
     # --- EFFECT SELECTION ---
     if clouds >= 25:
         # Cloudy Day: Rolling Aurora
-        fx = 37
+        fx = 30
         sx = int(20 + (c * 50)) # Rolls faster with more clouds
         ix = 150 
         
