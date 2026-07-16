@@ -134,49 +134,51 @@ def calculate_sky_state(altitude_deg, clouds, turbidity, moon_factor=0.5):
     )
 
 def main():
-    # Setup MQTT Client
-    client = mqtt.Client()
+    # Setup MQTT Client using the updated V2 API to remove the deprecation warning
+    client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
     try:
         client.connect(MQTT_BROKER, MQTT_PORT, 60)
-        client.loop_start()
         print(f"Connected to MQTT Broker ({MQTT_BROKER}:{MQTT_PORT})")
     except Exception as e:
         print(f"MQTT Connection failed: {e}. Exiting.")
         return
 
-    # Mocking static moon phase for runtime validation (e.g., 50% Waxing/Waning)
+    # Mocking static moon phase for runtime validation
     current_moon = 0.5 
 
     try:
-        while True:
-            # 1. Gather all environment input parameters
-            alt = get_solar_altitude()
-            clouds, turbidity = get_weather_and_turbidity()
-            
-            # 2. Process through engine
-            r, g, b, pwm = calculate_sky_state(alt, clouds, turbidity, current_moon)
-            
-            # 3. Formulate the precise WLED JSON structure
-            payload = {
-                "on": True,
-                "bri": 255,
-                "transition": 30, # Smooth out network shifts over 3 seconds
-                "seg": [
-                    {"id": 0, "col": [[r, g, b, 0]]},
-                    {"id": 1, "col": [[pwm, pwm, pwm, pwm]]}
-                ]
-            }
-            
-            # 4. Fire over the MQTT broker channel
-            print(f"Publishing Alt: {alt:.2f}° | RGB: [{r},{g},{b}] | PWM: {pwm}")
-            client.publish(MQTT_TOPIC, json.dumps(payload), qos=1)
-            
-            # Wait 60 seconds before cycling loop
-            time.sleep(60)
-            
-    except KeyboardInterrupt:
-        print("\nStopping Environment Daemon...")
-        client.loop_stop()
+        # 1. Gather all environment input parameters
+        alt = get_solar_altitude()
+        clouds, turbidity = get_weather_and_turbidity()
+        
+        # 2. Process through engine
+        r, g, b, pwm = calculate_sky_state(alt, clouds, turbidity, current_moon)
+        
+        # 3. Formulate the precise WLED JSON structure
+        payload = {
+            "on": True,
+            "bri": 255,
+            "transition": 30, # Smooth out network shifts over 3 seconds
+            "seg": [
+                {"id": 0, "col": [[r, g, b, 0]]},
+                {"id": 1, "col": [[pwm, pwm, pwm, pwm]]}
+            ]
+        }
+        
+        # 4. Fire over the MQTT broker channel
+        print(f"Publishing Alt: {alt:.2f}° | RGB: [{r},{g},{b}] | PWM: {pwm}")
+        
+        # We use publish and a brief loop call to ensure the network packet actually sends before the script quits
+        client.publish(MQTT_TOPIC, json.dumps(payload), qos=1)
+        client.loop(2) 
+        
+        print("Successfully synced to WLED. Shutting down one-shot script.")
+        
+    except Exception as e:
+        print(f"Error during execution: {e}")
+        
+    finally:
+        # Ensure we always disconnect cleanly
         client.disconnect()
 
 if __name__ == "__main__":
