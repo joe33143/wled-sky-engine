@@ -134,11 +134,15 @@ def calculate_sky_state(altitude_deg, clouds, turbidity, moon_factor=0.5):
     )
 
 def main():
-    # Setup MQTT Client using the updated V2 API to remove the deprecation warning
-    client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+    # Generate a completely unique ID to prevent public broker naming collisions
+    client_id = f"joe33143_sky_{int(time.time())}"
+    client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=client_id)
+    
     try:
         client.connect(MQTT_BROKER, MQTT_PORT, 60)
-        print(f"Connected to MQTT Broker ({MQTT_BROKER}:{MQTT_PORT})")
+        # CRITICAL: Start the network processor thread so the client can talk to the internet
+        client.loop_start() 
+        print(f"Connected to MQTT Broker ({MQTT_BROKER}:{MQTT_PORT}) with ID: {client_id}")
     except Exception as e:
         print(f"MQTT Connection failed: {e}. Exiting.")
         return
@@ -158,38 +162,33 @@ def main():
         payload = {
             "on": True,
             "bri": 255,
-            "transition": 30, # Smooth out network shifts over 3 seconds
+            "transition": 30, 
             "seg": [
                 {"id": 0, "col": [[r, g, b, 0]]},
                 {"id": 1, "col": [[pwm, pwm, pwm, pwm]]}
             ]
         }
         
-        # 4. Fire over the MQTT broker channel
+        # 4. Fire over the MQTT broker channel with QOS 1
         print(f"Publishing Alt: {alt:.2f}° | RGB: [{r},{g},{b}] | PWM: {pwm}")
+        publish_result = client.publish(MQTT_TOPIC, json.dumps(payload), qos=1)
         
-        # We use publish and a brief loop call to ensure the network packet actually sends before the script quits
-        client.publish(MQTT_TOPIC, json.dumps(payload), qos=1)
-        client.loop(2) 
+        # Wait up to 10 seconds for the network loop thread to finish delivery handshake
+        publish_result.wait_for_publish(timeout=10) 
         
-        print("Successfully synced to WLED. Shutting down one-shot script.")
-        
+        if publish_result.is_published():
+            print("Broker Confirmed: Payload delivered successfully to WLED topic.")
+        else:
+            print("Network Warning: Packet reached queue but failed delivery.")
+            
     except Exception as e:
         print(f"Error during execution: {e}")
         
     finally:
-        # Ensure we always disconnect cleanly
+        # Stop the network thread and close the socket connection cleanly
+        client.loop_stop()
         client.disconnect()
-# Force a blocking wait until the broker acknowledges the message receipt
-        print(f"Publishing Alt: {alt:.2f}° | RGB: [{r},{g},{b}] | PWM: {pwm}")
-        publish_result = client.publish(MQTT_TOPIC, json.dumps(payload), qos=1)
-        
-        # This blocks execution up to 10 seconds to ensure the network stack clears
-        publish_result.wait_for_publish(timeout=10) 
-        
-        if publish_result.is_published():
-            print("Broker Confirmed: Payload delivered successfully.")
-        else:
-            print("Network Error: Packet queued but broker rejected/dropped it.")
+        print("Successfully disconnected from broker. One-shot script run completed.")
+
 if __name__ == "__main__":
     main()
