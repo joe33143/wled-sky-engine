@@ -30,8 +30,8 @@ def get_night_payload(moon_factor, clouds):
         col3 = [138, 43, 226, 0]   # Purple/Blue Glitter Highlights
         phase_name += " [Glitter Active]"
     else:
-        # Cloudy Night: Rolling Aurora
-        fx = 37
+        # Cloudy Night: Aurora Effect (Updated for WLED 16)
+        fx = 38
         sx = int(20 + (c * 50))  # Rolls faster with more clouds
         ix = 150
         # Generate shadow and moonlit highlights dynamically
