@@ -97,7 +97,7 @@ def calculate_base_day_colors(altitude_deg, clouds, turbidity):
     b = lerp(k1[3], k2[3], t)
     pwm = lerp(k1[4], k2[4], t)
 
-    phase_name = "Morning Ramp" if altitude_deg < 35 else "Daytime"
+    phase_name = "Low Sun / Horizon" if altitude_deg < 35 else "Daytime"
 
     # Apply Cloud Dimming
     dim = 1.0 - (c * 0.5)
