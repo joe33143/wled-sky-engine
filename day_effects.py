@@ -14,16 +14,18 @@ def get_day_payload(r, g, b, pwm, clouds, base_phase_name):
     phase_name = base_phase_name
     
     # --- EFFECT 3-TIER SELECTION ---
-    if clouds < 25:
+    if clouds < 30:  # Bumped lower bench to 30%
         phase_name += " [Clear Sky]"
         
-    elif clouds < 85:
-        # Broken Clouds: Sun is peeking through, trigger rolling shadows (WLED 16 Aurora)
+    elif clouds < 75:  # Lowered ceiling to 75%
         fx = 38
         sx = int(20 + (c * 50)) 
-        ix = 150 
-        col2 = [int(r * 0.7), int(g * 0.7), int(b * 0.7), 0] # 30% Darker
-        col3 = [int(min(255, r * 1.2)), int(min(255, g * 1.2)), int(min(255, b * 1.3)), 0] # 20% Brighter
+        ix = 100  # Lowered intensity for a softer, more natural blend
+        
+        # Softened the contrast so highlights don't "pop" too harshly during low sun
+        col2 = [int(r * 0.85), int(g * 0.85), int(b * 0.85), 0] # Only 15% Darker
+        col3 = [int(min(255, r * 1.10)), int(min(255, g * 1.10)), int(min(255, b * 1.10)), 0] # Only 10% Brighter
+        
         phase_name += f" [Rolling Clouds: {clouds}%]"
         
     else:
