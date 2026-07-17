@@ -8,7 +8,6 @@ import paho.mqtt.client as mqtt
 from datetime import datetime
 import pytz
 
-# Import your new effect modules
 import night_effects
 import day_effects
 
@@ -25,30 +24,31 @@ def lerp(a, b, t):
     return a + (b - a) * t
 
 def get_moon_illumination():
-    """Calculates the current physical moon phase (0.0 to 1.0)"""
     new_moon_ref = datetime(2000, 1, 6, 18, 14, tzinfo=pytz.utc)
     synodic_month = 29.530588853
     now = datetime.now(pytz.utc)
     days = (now - new_moon_ref).total_seconds() / 86400.0
     phase = (days % synodic_month) / synodic_month
-    
-    # 0 = New Moon, 1.0 = Full Moon
     return (1 - math.cos(phase * 2 * math.pi)) / 2
 
 def get_weather_and_turbidity():
-    """Fetches real-time cloud data from Meteosource"""
     clouds = 0
     turbidity = 5.0
+    is_stormy = False
     
     if not METEOSOURCE_API_KEY:
-        return clouds, turbidity
+        return clouds, turbidity, is_stormy
 
     weather_url = f"https://www.meteosource.com/api/v1/free/point?lat={LAT}&lon={LON}&sections=current&key={METEOSOURCE_API_KEY}"
     try:
         response = requests.get(weather_url, timeout=10)
         if response.status_code == 200:
             summary = response.json().get("current", {}).get("summary", "").lower()
-            if "clear" in summary: clouds = 0
+            
+            if "thunder" in summary or "storm" in summary:
+                is_stormy = True
+                clouds = 100
+            elif "clear" in summary: clouds = 0
             elif "mostly clear" in summary: clouds = 20
             elif "partly cloudy" in summary: clouds = 50
             elif "mostly cloudy" in summary: clouds = 80
@@ -57,10 +57,9 @@ def get_weather_and_turbidity():
     except Exception as e:
         print(f"Failed to fetch weather: {e}")
         
-    return clouds, turbidity
+    return clouds, turbidity, is_stormy
 
 def get_solar_altitude():
-    """Calculates true solar elevation angle"""
     observer = ephem.Observer()
     observer.lat, observer.lon = str(LAT), str(LON)
     observer.date = datetime.now(pytz.utc)
@@ -69,16 +68,14 @@ def get_solar_altitude():
     return math.degrees(sun.alt)
 
 def calculate_base_day_colors(altitude_deg, clouds, turbidity):
-    """Handles the LERP math for daytime phases"""
     c = clouds / 100.0
-    
     keys = [
-        (-20, 35,  45,  60,  0),
-        (0,   80,  50,  60,  0),
-        (10,  130, 80,  50,  0),
-        (35,  200, 170, 150, 0),
-        (55,  255, 220, 180, 108),
-        (90,  255, 220, 180, 118)
+        (-20, 35,  45,  60,  0),     
+        (0,   150, 90,  100, 0),     
+        (10,  255, 166, 0,   0),     
+        (35,  255, 215, 180, 0),     
+        (55,  255, 220, 180, 108),   
+        (90,  255, 220, 180, 118)    
     ]
 
     k1, k2 = keys[0], keys[-1]
@@ -99,16 +96,13 @@ def calculate_base_day_colors(altitude_deg, clouds, turbidity):
 
     phase_name = "Low Sun / Horizon" if altitude_deg < 35 else "Daytime"
 
-    # Apply Cloud Dimming
     dim = 1.0 - (c * 0.5)
     r *= dim; g *= dim; b *= dim
 
-    # Apply Warm Haze (Turbidity)
     r += (turbidity * 3.5)
     g += (turbidity * 2.5)
     b -= (turbidity * 1.5)
 
-    # PWM Cloud Throttling
     pwm = pwm * (1.0 - (c * 0.1)) if altitude_deg > 35 else 0.0
 
     r = int(max(0, min(255, r)))
@@ -131,17 +125,36 @@ def main():
 
     try:
         alt = get_solar_altitude()
-        clouds, turbidity = get_weather_and_turbidity()
+        clouds, turbidity, is_stormy = get_weather_and_turbidity()
         moon = get_moon_illumination()
         
         # --- LOGIC ROUTER ---
-        # If the sun is below -6, route to the night animation engine.
-        # Otherwise, calculate daytime LERP and route to the day animation engine.
         if alt <= -6:
-            phase, col1, col2, col3, pwm, fx, sx, ix = night_effects.get_night_payload(moon, clouds)
+            phase, col1, col2, col3, pwm, fx, sx, ix = night_effects.get_night_payload(moon, clouds, is_stormy)
         else:
             r, g, b, base_pwm, base_phase = calculate_base_day_colors(alt, clouds, turbidity)
-            phase, col1, col2, col3, pwm, fx, sx, ix = day_effects.get_day_payload(r, g, b, base_pwm, clouds, base_phase)
+            phase, col1, col2, col3, pwm, fx, sx, ix = day_effects.get_day_payload(r, g, b, base_pwm, clouds, base_phase, is_stormy)
+        
+        # ----------------------------------------------------
+        # --- EXPANSION ZONE: SIDE & BUBBLER LEDS ---
+        # ----------------------------------------------------
+        # Default behavior: smoothly mirror the main sky
+        exp_col1, exp_col2, exp_col3 = col1, col2, col3
+        exp_fx, exp_sx, exp_ix = fx, sx, ix
+
+        # The Silent "Heat Lightning" override for storms
+        if is_stormy:
+            exp_fx = 43  # Lightning Effect
+            exp_sx = 25  # Extremely slow, lazy frequency
+            exp_ix = 80  # Soft fade, no sharp strobing
+            
+            # Faint, glowing indigo for the ambient/bubbler strikes
+            exp_col1 = [25, 35, 60, 0] 
+            # Very dark background so it blends into the gloomy storm
+            exp_col2 = [0, 0, 1, 0]    
+            exp_col3 = [0, 0, 0, 0]
+
+        # ----------------------------------------------------
         
         payload = {
             "on": True,
@@ -149,14 +162,29 @@ def main():
             "transition": 30, 
             "seg": [
                 {
-                    "id": 0, 
+                    "id": 0, # Main Sky RGB
                     "col": [col1, col2, col3], 
                     "fx": fx, "sx": sx, "ix": ix, "pal": 0
                 },
                 {
-                    "id": 1, 
+                    "id": 1, # Main PWM White
                     "col": [[pwm, pwm, pwm, pwm]], 
-                    "fx": 0 # The PWM Strip MUST stay solid!
+                    "fx": 0 
+                },
+                {
+                    "id": 2, # Left RGB (3px)
+                    "col": [exp_col1, exp_col2, exp_col3], 
+                    "fx": exp_fx, "sx": exp_sx, "ix": exp_ix, "pal": 0
+                },
+                {
+                    "id": 3, # Right RGB (3px)
+                    "col": [exp_col1, exp_col2, exp_col3], 
+                    "fx": exp_fx, "sx": exp_sx, "ix": exp_ix, "pal": 0
+                },
+                {
+                    "id": 4, # Bubbler RGB (4px)
+                    "col": [exp_col1, exp_col2, exp_col3], 
+                    "fx": exp_fx, "sx": exp_sx, "ix": exp_ix, "pal": 0
                 }
             ]
         }
