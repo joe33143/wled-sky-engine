@@ -69,13 +69,14 @@ def get_solar_altitude():
 
 def calculate_base_day_colors(altitude_deg, clouds, turbidity):
     c = clouds / 100.0
+# NEW Full-Range Keyframes capped at 75% peak PWM
     keys = [
         (-20, 35,  45,  60,  0),     
         (0,   150, 90,  100, 0),     
         (10,  255, 166, 0,   0),     
-        (35,  255, 215, 180, 0),     
-        (55,  255, 220, 180, 108),   
-        (90,  255, 220, 180, 118)    
+        (35,  255, 215, 180, 50),    
+        (55,  255, 220, 180, 150),   
+        (90,  255, 220, 180, 190)    # Full Noon: Capped at ~75% brightness (190)
     ]
 
     k1, k2 = keys[0], keys[-1]
