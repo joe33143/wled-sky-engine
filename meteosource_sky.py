@@ -159,7 +159,7 @@ def main():
         
         payload = {
             "on": True,
-            "bri": 255,
+            "bri": 255, # Master brightness stays maxed out
             "transition": 30, 
             "seg": [
                 {
@@ -169,7 +169,8 @@ def main():
                 },
                 {
                     "id": 1, # Main PWM White
-                    "col": [[pwm, pwm, pwm, pwm]], 
+                    "bri": pwm,  # <-- PWM now controls the Segment Brightness slider directly!
+                    "col": [[235, 235, 235, 235]], # <-- Locked to ebebebeb
                     "fx": 0 
                 },
                 {
