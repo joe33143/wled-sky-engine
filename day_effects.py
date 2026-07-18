@@ -44,7 +44,7 @@ def get_day_payload(r, g, b, pwm, clouds, base_phase_name, is_stormy=False):
         col3 = [int(min(255, r * 1.30)), int(min(255, g * 1.15)), int(min(255, b * 1.00)), 0]
         
         # Add 6% PWM fill light to brighten the tank
-        pwm = max(pwm, 15) 
+        pwm = max(pwm, 8) 
         phase_name += f" [Rolling Clouds: {clouds}%]"
         
     else:
