@@ -39,7 +39,7 @@ def get_day_payload(r, g, b, pwm, clouds, base_phase_name, is_stormy=False):
         sx = int(20 + (c * 50)) 
         ix = 100 
         # Base is much brighter (95% instead of 85%)
-        col2 = [int(r * 0.85), int(g * 0.85), int(b * 0.85), 0]
+        col2 = [int(r * 1), int(g * 0.85), int(b * 0.85), 0]
         # Highlights are skewed to push warmer tones (130% Red, 115% Green, 100% Blue)
         col3 = [int(min(255, r * 2)), int(min(255, g * 1.15)), int(min(255, b * 1.00)), 0]
         
@@ -49,9 +49,9 @@ def get_day_payload(r, g, b, pwm, clouds, base_phase_name, is_stormy=False):
         
     else:
         fx = 38
-        sx = 15  # Slow crawl instead of frozen 0
+        sx = 10  # Slow crawl instead of frozen 0
         ix = 100
-        col2 = [int(r * 0.85), int(g * 0.85), int(b * 0.85), 0]
+        col2 = [int(r * 1), int(g * 0.85), int(b * 0.85), 0]
         col3 = [int(min(255, r * 2)), int(min(255, g * 1.15)), int(min(255, b * 1.00)), 0]
         
         # Add 10% PWM fill light to punch through the heavy overcast
