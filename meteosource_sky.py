@@ -74,7 +74,7 @@ def calculate_base_day_colors(altitude_deg, clouds, turbidity):
     keys = [
         # (Alt, R,   G,   B,  PWM)
         (-6,   35,  45,  75,   0),  # Hand-off to Night Engine: Deep twilight blue, PWM off
-        (0,   120, 110, 140,  12),  # Sunset/Sunrise: Muted dusty violet/grey (kills the harsh orange)
+        (0,   120, 110, 140,  18),  # Sunset/Sunrise: Muted dusty violet/grey (kills the harsh orange)
         (10,  190, 185, 205,  25),  # Early Morning: Soft, crisp neutral light
         (35,  240, 235, 235,  40),  # Mid-Morning: Clean daylight
         (55,  255, 250, 245,  52),  # Late Morning
