@@ -140,7 +140,35 @@ def main():
         else:
             r, g, b, base_pwm, base_phase = calculate_base_day_colors(alt, clouds, turbidity)
             phase, col1, col2, col3, pwm, fx, sx, ix = day_effects.get_day_payload(r, g, b, base_pwm, clouds, base_phase, is_stormy)
+        # --- LOGIC ROUTER ---
+        if alt <= -6:
+            phase, col1, col2, col3, pwm, fx, sx, ix = night_effects.get_night_payload(moon, clouds, is_stormy)
+        else:
+            r, g, b, base_pwm, base_phase = calculate_base_day_colors(alt, clouds, turbidity)
+            phase, col1, col2, col3, pwm, fx, sx, ix = day_effects.get_day_payload(r, g, b, base_pwm, clouds, base_phase, is_stormy)
         
+        # ----------------------------------------------------
+        # --- 10:00 PM IST PWM OVERRIDE ---
+        # ----------------------------------------------------
+        ist_tz = pytz.timezone('Asia/Kolkata')
+        now_ist = datetime.now(ist_tz)
+        
+        # Convert time to a decimal for easy math (e.g., 9:30 PM = 21.5)
+        time_float = now_ist.hour + (now_ist.minute / 60.0)
+        
+        # Only activate the evening hold between 5:00 PM (17.0) and 10:00 PM (22.0)
+        if 17.0 <= time_float <= 22.0:
+            if time_float < 21.5:
+                # From 5:00 PM to 9:30 PM -> Lock a minimum PWM of 15
+                evening_pwm = 18
+            else:
+                # From 9:30 PM to 10:00 PM -> Fade seamlessly from 15 down to 0
+                fade_factor = (22.0 - time_float) / 0.5  # 1.0 at 9:30, 0.0 at 10:00
+                evening_pwm = int(18 * fade_factor)
+                
+            # Take whichever is higher: the physical sun's PWM, or our evening hold
+            pwm = max(pwm, evening_pwm)
+
         # ----------------------------------------------------
         # --- EXPANSION ZONE: SIDE & BUBBLER LEDS ---
         # ----------------------------------------------------
