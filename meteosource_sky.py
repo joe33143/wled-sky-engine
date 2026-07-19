@@ -148,22 +148,22 @@ def main():
             phase, col1, col2, col3, pwm, fx, sx, ix = day_effects.get_day_payload(r, g, b, base_pwm, clouds, base_phase, is_stormy)
         
         # ----------------------------------------------------
-        # --- 10:00 PM IST PWM OVERRIDE ---
+        # --- EVENING PWM OVERRIDE (Fades out by 10:30 PM) ---
         # ----------------------------------------------------
         ist_tz = pytz.timezone('Asia/Kolkata')
         now_ist = datetime.now(ist_tz)
         
-        # Convert time to a decimal for easy math (e.g., 9:30 PM = 21.5)
         time_float = now_ist.hour + (now_ist.minute / 60.0)
         
-        # Only activate the evening hold between 5:00 PM (17.0) and 10:00 PM (22.0)
-        if 17.0 <= time_float <= 22.0:
-            if time_float < 21.5:
-                # From 5:00 PM to 9:30 PM -> Lock a minimum PWM of 15
+        # Only activate the evening hold between 5:00 PM (17.0) and 10:30 PM (22.5)
+        if 17.0 <= time_float <= 22.5:
+            if time_float < 22.0:
+                # From 5:00 PM to 10:00 PM -> Lock a minimum PWM of 18
                 evening_pwm = 18
             else:
-                # From 9:30 PM to 10:00 PM -> Fade seamlessly from 15 down to 0
-                fade_factor = (22.0 - time_float) / 0.5  # 1.0 at 9:30, 0.0 at 10:00
+                # From 10:00 PM to 10:30 PM -> Fade seamlessly from 18 down to 0
+                # Math: (10.5 - Current Time) / 0.5 hours total duration
+                fade_factor = (22.5 - time_float) / 0.5  
                 evening_pwm = int(18 * fade_factor)
                 
             # Take whichever is higher: the physical sun's PWM, or our evening hold
