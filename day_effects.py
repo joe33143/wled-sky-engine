@@ -41,7 +41,7 @@ def get_day_payload(r, g, b, pwm, clouds, base_phase_name, is_stormy=False):
         # Base is much brighter (95% instead of 85%)
         col2 = [int(r * 0.95), int(g * 0.95), int(b * 0.95), 0]
         # Highlights are skewed to push warmer tones (130% Red, 115% Green, 100% Blue)
-        col3 = [int(min(255, r * 1.80)), int(min(255, g * 1.5)), int(min(255, b * 1.00)), 0]
+        col3 = [int(min(255, r * 2)), int(min(255, g * 1.5)), int(min(255, b * 1.00)), 0]
         
         # Add 6% PWM fill light to brighten the tank
         pwm = max(pwm, 8) 
