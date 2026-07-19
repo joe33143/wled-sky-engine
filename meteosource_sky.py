@@ -75,8 +75,8 @@ def calculate_base_day_colors(altitude_deg, clouds, turbidity):
         (0,   150, 90,  100, 0),     
         (10,  255, 166, 0,   0),     
         (35,  255, 215, 180, 50),    
-        (55,  255, 220, 180, 48),   
-        (90,  255, 220, 180, 96)    # Full Noon: Capped at ~75% brightness (190)
+        (55,  255, 220, 180, 32),   
+        (90,  255, 220, 180, 64)    # Full Noon: Capped at ~75% brightness (190)
     ]
 
     k1, k2 = keys[0], keys[-1]
