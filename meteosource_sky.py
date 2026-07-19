@@ -69,14 +69,16 @@ def get_solar_altitude():
 
 def calculate_base_day_colors(altitude_deg, clouds, turbidity):
     c = clouds / 100.0
-# NEW Full-Range Keyframes capped at 75% peak PWM
+
+    # --- SMOOTHED, NEUTRALIZED KEYFRAMES ---
     keys = [
-        (-20, 35,  45,  60,  0),     
-        (0,   150, 90,  100, 0),     
-        (10,  255, 166, 0,   10),     
-        (35,  255, 215, 180, 16),    
-        (55,  255, 220, 180, 32),   
-        (90,  255, 220, 180, 64)    # Full Noon: Capped at ~75% brightness (190)
+        # (Alt, R,   G,   B,  PWM)
+        (-6,   35,  45,  75,   0),  # Hand-off to Night Engine: Deep twilight blue, PWM off
+        (0,   120, 110, 140,  15),  # Sunset/Sunrise: Muted dusty violet/grey (kills the harsh orange)
+        (10,  190, 185, 205,  25),  # Early Morning: Soft, crisp neutral light
+        (35,  240, 235, 235,  40),  # Mid-Morning: Clean daylight
+        (55,  255, 250, 245,  52),  # Late Morning
+        (90,  255, 255, 255,  64)   # Solar Noon: Max PWM exactly where you capped it
     ]
 
     k1, k2 = keys[0], keys[-1]
@@ -97,14 +99,17 @@ def calculate_base_day_colors(altitude_deg, clouds, turbidity):
 
     phase_name = "Low Sun / Horizon" if altitude_deg < 35 else "Daytime"
 
+    # Cloud Dimming
     dim = 1.0 - (c * 0.5)
     r *= dim; g *= dim; b *= dim
 
+    # Dust/Pollution Scattering
     r += (turbidity * 3.5)
     g += (turbidity * 2.5)
     b -= (turbidity * 1.5)
 
-    pwm = pwm * (1.0 - (c * 0.1)) if altitude_deg > 35 else 0.0
+    # REMOVED the hard 35-degree cutoff so your lower PWM values actually work
+    pwm = pwm * (1.0 - (c * 0.1)) 
 
     r = int(max(0, min(255, r)))
     g = int(max(0, min(255, g)))
