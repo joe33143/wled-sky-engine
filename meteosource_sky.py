@@ -170,32 +170,37 @@ def main():
                 {
                     "id": 0, # Main Sky RGB
                     "col": [col1, col2, col3], 
+                    "cct": 38,   # <--- Captured from your preset
                     "fx": fx, "sx": sx, "ix": ix, "pal": 0
                 },
                 {
                     "id": 1, # Main PWM White
-                    "bri": pwm,  # <-- PWM now controls the Segment Brightness slider directly!
-                    "col": [[235, 235, 235, 235]], # <-- Locked to ebebebeb
+                    "bri": pwm, 
+                    "col": [[235, 235, 235, 235]], 
+                    "cct": 127,  # <--- The ~6000K neutral white balance
                     "fx": 0 
                 },
                 {
                     "id": 2, # Left RGB (3px)
                     "col": [exp_col1, exp_col2, exp_col3], 
+                    "cct": 38,
                     "fx": exp_fx, "sx": exp_sx, "ix": exp_ix, "pal": 0
                 },
                 {
                     "id": 3, # Right RGB (3px)
                     "col": [exp_col1, exp_col2, exp_col3], 
+                    "cct": 38,
                     "fx": exp_fx, "sx": exp_sx, "ix": exp_ix, "pal": 0
                 },
                 {
                     "id": 4, # Bubbler RGB (4px)
                     "col": [exp_col1, exp_col2, exp_col3], 
+                    "cct": 38,
                     "fx": exp_fx, "sx": exp_sx, "ix": exp_ix, "pal": 0
                 }
             ]
         }
-        
+
         print(f"[{phase}] -> FX: {fx} | Base RGB: {col1[:3]} | PWM: {pwm}")
         publish_result = client.publish(MQTT_TOPIC, json.dumps(payload), qos=1)
         publish_result.wait_for_publish(timeout=10) 
