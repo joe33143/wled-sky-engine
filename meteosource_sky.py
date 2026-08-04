@@ -23,6 +23,24 @@ LON = 83.0062
 def lerp(a, b, t):
     return a + (b - a) * t
 
+def get_saturated_color(rgb_list):
+    """Pushes an RGB color to 100% saturation while keeping its hue."""
+    r, g, b = rgb_list[0], rgb_list[1], rgb_list[2]
+    if r == 0 and g == 0 and b == 0:
+        return [0, 0, 0, 0]
+    
+    mn = min(r, g, b)
+    mx = max(r, g, b)
+    if mx == mn: 
+        return [255, 255, 255, 0] # Fallback if it's pure grey
+    
+    # Strip the white and scale the highest color to 255
+    r_sat = int((r - mn) * 255 / (mx - mn))
+    g_sat = int((g - mn) * 255 / (mx - mn))
+    b_sat = int((b - mn) * 255 / (mx - mn))
+    
+    return [r_sat, g_sat, b_sat, 0]
+
 def get_moon_illumination():
     new_moon_ref = datetime(2000, 1, 6, 18, 14, tzinfo=pytz.utc)
     synodic_month = 29.530588853
@@ -70,17 +88,15 @@ def get_solar_altitude():
 def calculate_base_day_colors(altitude_deg, clouds, turbidity):
     c = clouds / 100.0
 
-    # --- SMOOTHED, NEUTRALIZED KEYFRAMES ---
-
     # --- SMOOTHED, NEUTRALIZED KEYFRAMES (High-PWM Edition) ---
     keys = [
         # (Alt, R,   G,   B,  PWM)
-        (-6,   35,  45,  75,   0),  # Hand-off to Night Engine: Deep twilight blue, PWM off  
-        (0,   120, 110, 140,  18),  # Sunset/Sunrise: Muted dusty violet/grey (kills the harsh orange)
-        (10,  190, 185, 205,  40),  # Early Morning: Soft, crisp neutral light
-        (35,  240, 235, 235, 100),  # Mid-Morning: Much brighter PWM
+        (-6,   35,  45,  75,   0),  # Hand-off to Night Engine
+        (0,   120, 110, 140,  18),  # Sunset/Sunrise 
+        (10,  190, 185, 205,  40),  # Early Morning 
+        (35,  240, 235, 235, 100),  # Mid-Morning 
         (55,  255, 250, 245, 160),  # Late Morning
-        (90,  255, 255, 255, 200)   # Solar Noon: Pushed up to 200!
+        (90,  255, 255, 255, 200)   # Solar Noon (Max PWM)
     ]
 
     k1, k2 = keys[0], keys[-1]
@@ -106,11 +122,8 @@ def calculate_base_day_colors(altitude_deg, clouds, turbidity):
     r *= dim; g *= dim; b *= dim
 
     # Dust/Pollution Scattering
-    r += (turbidity * 3.5)
-    g += (turbidity * 2.5)
-    b -= (turbidity * 1.5)
+    r += (turbidity * 3.5); g += (turbidity * 2.5); b -= (turbidity * 1.5)
 
-    # REMOVED the hard 35-degree cutoff so your lower PWM values actually work
     pwm = pwm * (1.0 - (c * 0.1)) 
 
     r = int(max(0, min(255, r)))
@@ -138,10 +151,10 @@ def main():
         
         # --- LOGIC ROUTER ---
         if alt <= -6:
-            phase, col1, col2, col3, pwm, fx, sx, ix = night_effects.get_night_payload(moon, clouds, is_stormy)
+            phase, col1, col2, col3, pwm, fx, sx, ix, pal = night_effects.get_night_payload(moon, clouds, is_stormy)
         else:
             r, g, b, base_pwm, base_phase = calculate_base_day_colors(alt, clouds, turbidity)
-            phase, col1, col2, col3, pwm, fx, sx, ix = day_effects.get_day_payload(r, g, b, base_pwm, clouds, base_phase, is_stormy)
+            phase, col1, col2, col3, pwm, fx, sx, ix, pal = day_effects.get_day_payload(r, g, b, base_pwm, clouds, base_phase, is_stormy)
         
         # ----------------------------------------------------
         # --- EVENING PWM OVERRIDE (Fades out by 10:30 PM) ---
@@ -151,34 +164,39 @@ def main():
         
         time_float = now_ist.hour + (now_ist.minute / 60.0)
         
-        # Only activate the evening hold between 5:00 PM (17.0) and 10:30 PM (22.5)
         if 17.0 <= time_float <= 22.5:
             if time_float < 22.0:
-                # From 5:00 PM to 10:00 PM -> Lock a minimum PWM of 18
                 evening_pwm = 18
             else:
-                # From 10:00 PM to 10:30 PM -> Fade seamlessly from 18 down to 0
-                # Math: (10.5 - Current Time) / 0.5 hours total duration
                 fade_factor = (22.5 - time_float) / 0.5  
                 evening_pwm = int(18 * fade_factor)
                 
-            # Take whichever is higher: the physical sun's PWM, or our evening hold
             pwm = max(pwm, evening_pwm)
 
         # ----------------------------------------------------
-        # --- EXPANSION ZONE: 6-Pixel Extension ---
+        # --- EXPANSION ZONE: 6-Pixel Saturated Extension ---
         # ----------------------------------------------------
-        exp_col1, exp_col2, exp_col3 = col1, col2, col3
-        exp_fx, exp_sx, exp_ix = fx, sx, ix
-        exp_pal = 0 # Default palette
+        exp_fx = 0  
+        exp_sx = 128
+        exp_ix = 128
+        exp_pal = 0
+
+        # Push the main sky colors to 100% saturation for the side strip
+        exp_col1 = get_saturated_color(col1)
+        exp_col2 = get_saturated_color(col2)
+        exp_col3 = get_saturated_color(col3)
 
         if is_stormy:
-            exp_fx = 57  # Updated to match your Thunder Storm JSON
+            exp_fx = 57  
             exp_sx = 207 
             exp_ix = 129  
             exp_col1 = [106, 149, 255, 0] 
             exp_col2 = [112, 112, 112, 0]    
             exp_col3 = [0, 0, 0, 0]
+            
+        elif "Rainy" in phase:
+            exp_col1 = [106, 149, 255, 0]
+            exp_col2 = [148, 148, 148, 0]
 
         # ----------------------------------------------------
         
@@ -191,7 +209,7 @@ def main():
                     "id": 0, # Main Sky RGB
                     "col": [col1, col2, col3], 
                     "cct": 38,   
-                    "fx": fx, "sx": sx, "ix": ix, "pal": 0 
+                    "fx": fx, "sx": sx, "ix": ix, "pal": pal 
                 },
                 {
                     "id": 1, # Main PWM White
@@ -203,12 +221,12 @@ def main():
                 {
                     "id": 2, # Unified 6-Pixel Extension RGB
                     "col": [exp_col1, exp_col2, exp_col3], 
-                    "cct": 127,
+                    "cct": 127,  # Shifts the White Balance to the perfect middle
                     "fx": exp_fx, "sx": exp_sx, "ix": exp_ix, "pal": exp_pal
                 }
             ]
         }
-
+        
         print(f"[{phase}] -> FX: {fx} | Base RGB: {col1[:3]} | PWM: {pwm}")
         publish_result = client.publish(MQTT_TOPIC, json.dumps(payload), qos=1)
         publish_result.wait_for_publish(timeout=10) 
