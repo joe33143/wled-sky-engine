@@ -72,3 +72,5 @@ def get_day_payload(r, g, b, pwm, clouds, base_phase_name, is_stormy=False):
         col3 = [int(min(255, r * 1.3)), int(min(255, g * 1.15)), int(min(255, b * 1.00)), 0]
         pwm = max(pwm, 18) 
         phase_name += f" [Rolling Clouds: {clouds}%]"
+
+return phase_name, col1, col2, col3, pwm, fx, sx, ix, pal
