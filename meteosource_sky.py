@@ -32,9 +32,8 @@ def get_saturated_color(rgb_list):
     mn = min(r, g, b)
     mx = max(r, g, b)
     if mx == mn: 
-        return [255, 255, 255, 0] # Fallback if it's pure grey
+        return [255, 255, 255, 0] 
     
-    # Strip the white and scale the highest color to 255
     r_sat = int((r - mn) * 255 / (mx - mn))
     g_sat = int((g - mn) * 255 / (mx - mn))
     b_sat = int((b - mn) * 255 / (mx - mn))
@@ -88,15 +87,13 @@ def get_solar_altitude():
 def calculate_base_day_colors(altitude_deg, clouds, turbidity):
     c = clouds / 100.0
 
-    # --- SMOOTHED, NEUTRALIZED KEYFRAMES (High-PWM Edition) ---
     keys = [
-        # (Alt, R,   G,   B,  PWM)
-        (-6,   35,  45,  75,   0),  # Hand-off to Night Engine
-        (0,   120, 110, 140,  18),  # Sunset/Sunrise 
-        (10,  190, 185, 205,  40),  # Early Morning 
-        (35,  240, 235, 235, 100),  # Mid-Morning 
-        (55,  255, 250, 245, 160),  # Late Morning
-        (90,  255, 255, 255, 200)   # Solar Noon (Max PWM)
+        (-6,   35,  45,  75,   0),  
+        (0,   120, 110, 140,  18),  
+        (10,  190, 185, 205,  40),  
+        (35,  240, 235, 235, 100),  
+        (55,  255, 250, 245, 160),  
+        (90,  255, 255, 255, 200)   
     ]
 
     k1, k2 = keys[0], keys[-1]
@@ -117,11 +114,9 @@ def calculate_base_day_colors(altitude_deg, clouds, turbidity):
 
     phase_name = "Low Sun / Horizon" if altitude_deg < 35 else "Daytime"
 
-    # Cloud Dimming
     dim = 1.0 - (c * 0.5)
     r *= dim; g *= dim; b *= dim
 
-    # Dust/Pollution Scattering
     r += (turbidity * 3.5); g += (turbidity * 2.5); b -= (turbidity * 1.5)
 
     pwm = pwm * (1.0 - (c * 0.1)) 
@@ -149,31 +144,37 @@ def main():
         clouds, turbidity, is_stormy = get_weather_and_turbidity()
         moon = get_moon_illumination()
         
-        # --- LOGIC ROUTER ---
-        if alt <= -6:
-            phase, col1, col2, col3, pwm, fx, sx, ix, pal = night_effects.get_night_payload(moon, clouds, is_stormy)
-        else:
-            r, g, b, base_pwm, base_phase = calculate_base_day_colors(alt, clouds, turbidity)
-            phase, col1, col2, col3, pwm, fx, sx, ix, pal = day_effects.get_day_payload(r, g, b, base_pwm, clouds, base_phase, is_stormy)
-        
-        # ----------------------------------------------------
-        # --- EVENING PWM OVERRIDE (Fades out by 10:30 PM) ---
-        # ----------------------------------------------------
+        # --- TIME & SCHEDULE PREP ---
         ist_tz = pytz.timezone('Asia/Kolkata')
         now_ist = datetime.now(ist_tz)
-        
         time_float = now_ist.hour + (now_ist.minute / 60.0)
-        
-        if 17.0 <= time_float <= 22.5:
-            if time_float < 22.0:
-                evening_pwm = 18
-            else:
-                fade_factor = (22.5 - time_float) / 0.5  
-                evening_pwm = int(18 * fade_factor)
-                
-            pwm = max(pwm, evening_pwm)
 
         # ----------------------------------------------------
+        # --- EVENING HOLD & NIGHT MODE DELAY ---
+        # ----------------------------------------------------
+        effective_alt = alt
+        
+        # FREEZE the sun at the Horizon (0 degrees) from Sunset until 9:00 PM (21.0)
+        # This keeps the evening RGB preset active long after the physical sun sets.
+        if alt <= 0 and (16.0 <= time_float < 21.0):
+            effective_alt = 0
+
+        # --- LOGIC ROUTER ---
+        if effective_alt <= -6:
+            phase, col1, col2, col3, pwm, fx, sx, ix, pal = night_effects.get_night_payload(moon, clouds, is_stormy)
+        else:
+            r, g, b, base_pwm, base_phase = calculate_base_day_colors(effective_alt, clouds, turbidity)
+            phase, col1, col2, col3, pwm, fx, sx, ix, pal = day_effects.get_day_payload(r, g, b, base_pwm, clouds, base_phase, is_stormy)
+
+        # ----------------------------------------------------
+        # --- PWM TIME OVERRIDE (Fades out at 8:00 PM) ---
+        # ----------------------------------------------------
+        if 17.0 <= time_float < 20.0:
+            pwm = max(pwm, 18)
+        elif 20.0 <= time_float < 21.0:
+            # Force PWM off strictly after 8 PM (RGB stays active behind it!)
+            pwm = 0
+
         # ----------------------------------------------------
         # --- EXPANSION ZONE: 6-Pixel Saturated Extension ---
         # ----------------------------------------------------
@@ -182,7 +183,7 @@ def main():
         exp_ix = 128
         exp_pal = 0
 
-        # 1. Grab the colors for the tank bubbler BEFORE we turn the main RGB off
+        # Grab the colors for the tank bubbler BEFORE we turn the main RGB off
         exp_col1 = get_saturated_color(col1)
         exp_col2 = get_saturated_color(col2)
         exp_col3 = get_saturated_color(col3)
@@ -202,44 +203,60 @@ def main():
         # ==========================================
         # POWER SAVING OVERRIDE: MAIN RGB OFF if PWM > 34
         # ==========================================
-        # 2. Now that the tank has its saturated colors, we can kill the main ceiling RGB
         if pwm > 34 and not is_stormy:
             col1 = [0, 0, 0, 0]
             col2 = [0, 0, 0, 0]
             col3 = [0, 0, 0, 0]
-            fx = 0  # Kill all animations on main strip
+            fx = 0  
             phase += " [MAIN RGB DISABLED]"
 
         # ----------------------------------------------------
+        # --- DYNAMIC WLED TRANSITION TIMERS ---
+        # ----------------------------------------------------
+        wled_transition = 50  # Base transition is now 5 seconds (50 deciseconds)
+        
+        # Exactly 8:00 PM (PWM fading to 0) -> 20 seconds
+        if 20.0 <= time_float < 20.25:
+            wled_transition = 200
+            
+        # Exactly 9:00 PM (Night mode transition begins) -> 29 seconds
+        elif 21.0 <= time_float < 21.25:
+            wled_transition = 290
+            
+        # Morning Dawn (Sun rising between -6 and 10 degrees) -> 20 seconds
+        elif -6 <= alt <= 10 and 4.0 <= time_float <= 9.0:
+            wled_transition = 200
 
+        # ----------------------------------------------------
+        
         payload = {
             "on": True,
             "bri": 255, 
-            "transition": 30, 
+            "transition": wled_transition,  # <--- Dynamic timer applied here!
             "seg": [
                 {
-                    "id": 0, # Main Sky RGB
+                    "id": 0, 
                     "col": [col1, col2, col3], 
                     "cct": 38,   
                     "fx": fx, "sx": sx, "ix": ix, "pal": pal 
                 },
                 {
-                    "id": 1, # Main PWM White
+                    "id": 1, 
                     "bri": pwm, 
                     "col": [[235, 235, 235, 235]], 
                     "cct": 127,  
                     "fx": 0 
                 },
                 {
-                    "id": 2, # Unified 6-Pixel Extension RGB
+                    "id": 2, 
                     "col": [exp_col1, exp_col2, exp_col3], 
-                    "cct": 127,  # Shifts the White Balance to the perfect middle
+                    "cct": 127,  
                     "fx": exp_fx, "sx": exp_sx, "ix": exp_ix, "pal": exp_pal
                 }
             ]
         }
         
-        print(f"[{phase}] -> FX: {fx} | Base RGB: {col1[:3]} | PWM: {pwm}")
+        print(f"[{phase}] -> FX: {fx} | Base RGB: {col1[:3]} | PWM: {pwm} | Trans: {wled_transition/10}s")
         publish_result = client.publish(MQTT_TOPIC, json.dumps(payload), qos=1)
         publish_result.wait_for_publish(timeout=10) 
         
@@ -251,3 +268,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+            
