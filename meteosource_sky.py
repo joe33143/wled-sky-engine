@@ -71,14 +71,16 @@ def calculate_base_day_colors(altitude_deg, clouds, turbidity):
     c = clouds / 100.0
 
     # --- SMOOTHED, NEUTRALIZED KEYFRAMES ---
+
+    # --- SMOOTHED, NEUTRALIZED KEYFRAMES (High-PWM Edition) ---
     keys = [
         # (Alt, R,   G,   B,  PWM)
-        (-6,   35,  45,  75,   0),  # Hand-off to Night Engine: Deep twilight blue, PWM off
+        (-6,   35,  45,  75,   0),  # Hand-off to Night Engine: Deep twilight blue, PWM off  
         (0,   120, 110, 140,  18),  # Sunset/Sunrise: Muted dusty violet/grey (kills the harsh orange)
-        (10,  190, 185, 205,  25),  # Early Morning: Soft, crisp neutral light
-        (35,  240, 235, 235,  40),  # Mid-Morning: Clean daylight
-        (55,  255, 250, 245,  52),  # Late Morning
-        (90,  255, 255, 255,  64)   # Solar Noon: Max PWM exactly where you capped it
+        (10,  190, 185, 205,  40),  # Early Morning: Soft, crisp neutral light
+        (35,  240, 235, 235, 100),  # Mid-Morning: Much brighter PWM
+        (55,  255, 250, 245, 160),  # Late Morning
+        (90,  255, 255, 255, 200)   # Solar Noon: Pushed up to 200!
     ]
 
     k1, k2 = keys[0], keys[-1]
@@ -140,12 +142,6 @@ def main():
         else:
             r, g, b, base_pwm, base_phase = calculate_base_day_colors(alt, clouds, turbidity)
             phase, col1, col2, col3, pwm, fx, sx, ix = day_effects.get_day_payload(r, g, b, base_pwm, clouds, base_phase, is_stormy)
-        # --- LOGIC ROUTER ---
-        if alt <= -6:
-            phase, col1, col2, col3, pwm, fx, sx, ix = night_effects.get_night_payload(moon, clouds, is_stormy)
-        else:
-            r, g, b, base_pwm, base_phase = calculate_base_day_colors(alt, clouds, turbidity)
-            phase, col1, col2, col3, pwm, fx, sx, ix = day_effects.get_day_payload(r, g, b, base_pwm, clouds, base_phase, is_stormy)
         
         # ----------------------------------------------------
         # --- EVENING PWM OVERRIDE (Fades out by 10:30 PM) ---
@@ -170,61 +166,45 @@ def main():
             pwm = max(pwm, evening_pwm)
 
         # ----------------------------------------------------
-        # --- EXPANSION ZONE: SIDE & BUBBLER LEDS ---
+        # --- EXPANSION ZONE: 6-Pixel Extension ---
         # ----------------------------------------------------
-        # Default behavior: smoothly mirror the main sky
         exp_col1, exp_col2, exp_col3 = col1, col2, col3
         exp_fx, exp_sx, exp_ix = fx, sx, ix
+        exp_pal = 0 # Default palette
 
-        # The Silent "Heat Lightning" override for storms
         if is_stormy:
-            exp_fx = 43  # Lightning Effect
-            exp_sx = 25  # Extremely slow, lazy frequency
-            exp_ix = 80  # Soft fade, no sharp strobing
-            
-            # Faint, glowing indigo for the ambient/bubbler strikes
-            exp_col1 = [25, 35, 60, 0] 
-            # Very dark background so it blends into the gloomy storm
-            exp_col2 = [0, 0, 1, 0]    
+            exp_fx = 57  # Updated to match your Thunder Storm JSON
+            exp_sx = 207 
+            exp_ix = 129  
+            exp_col1 = [106, 149, 255, 0] 
+            exp_col2 = [112, 112, 112, 0]    
             exp_col3 = [0, 0, 0, 0]
 
         # ----------------------------------------------------
         
         payload = {
             "on": True,
-            "bri": 255, # Master brightness stays maxed out
+            "bri": 255, 
             "transition": 30, 
             "seg": [
                 {
                     "id": 0, # Main Sky RGB
                     "col": [col1, col2, col3], 
-                    "cct": 38,   # <--- Captured from your preset
-                    "fx": fx, "sx": sx, "ix": ix, "pal": 0
+                    "cct": 38,   
+                    "fx": fx, "sx": sx, "ix": ix, "pal": 0 
                 },
                 {
                     "id": 1, # Main PWM White
                     "bri": pwm, 
                     "col": [[235, 235, 235, 235]], 
-                    "cct": 127,  # <--- The ~6000K neutral white balance
+                    "cct": 127,  
                     "fx": 0 
                 },
                 {
-                    "id": 2, # Left RGB (3px)
+                    "id": 2, # Unified 6-Pixel Extension RGB
                     "col": [exp_col1, exp_col2, exp_col3], 
-                    "cct": 38,
-                    "fx": exp_fx, "sx": exp_sx, "ix": exp_ix, "pal": 0
-                },
-                {
-                    "id": 3, # Right RGB (3px)
-                    "col": [exp_col1, exp_col2, exp_col3], 
-                    "cct": 38,
-                    "fx": exp_fx, "sx": exp_sx, "ix": exp_ix, "pal": 0
-                },
-                {
-                    "id": 4, # Bubbler RGB (4px)
-                    "col": [exp_col1, exp_col2, exp_col3], 
-                    "cct": 38,
-                    "fx": exp_fx, "sx": exp_sx, "ix": exp_ix, "pal": 0
+                    "cct": 127,
+                    "fx": exp_fx, "sx": exp_sx, "ix": exp_ix, "pal": exp_pal
                 }
             ]
         }
