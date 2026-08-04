@@ -45,7 +45,7 @@ def get_day_payload(r, g, b, pwm, clouds, base_phase_name, is_stormy=False):
         fx = 88
         sx = 68
         ix = 160
-        pal = 0  # Unlocked! WLED will now use your dynamic colors
+        pal = 0  
         
         # Boost the natural RGB so the sunset pops organically
         r_boost = int(min(255, r * 1.5))
@@ -73,4 +73,6 @@ def get_day_payload(r, g, b, pwm, clouds, base_phase_name, is_stormy=False):
         pwm = max(pwm, 18) 
         phase_name += f" [Rolling Clouds: {clouds}%]"
 
-return phase_name, col1, col2, col3, pwm, fx, sx, ix, pal
+    # <-- This is the line that got deleted!
+    return phase_name, col1, col2, col3, pwm, fx, sx, ix, pal
+    
