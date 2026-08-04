@@ -181,7 +181,7 @@ def main():
         exp_ix = 128
         exp_pal = 0
 
-        # Push the main sky colors to 100% saturation for the side strip
+        # 1. Grab the colors for the tank bubbler BEFORE we turn the main RGB off
         exp_col1 = get_saturated_color(col1)
         exp_col2 = get_saturated_color(col2)
         exp_col3 = get_saturated_color(col3)
@@ -198,8 +198,19 @@ def main():
             exp_col1 = [106, 149, 255, 0]
             exp_col2 = [148, 148, 148, 0]
 
+        # ==========================================
+        # POWER SAVING OVERRIDE: MAIN RGB OFF if PWM > 34
+        # ==========================================
+        # 2. Now that the tank has its saturated colors, we can kill the main ceiling RGB
+        if pwm > 34 and not is_stormy:
+            col1 = [0, 0, 0, 0]
+            col2 = [0, 0, 0, 0]
+            col3 = [0, 0, 0, 0]
+            fx = 0  # Kill all animations on main strip
+            phase += " [MAIN RGB DISABLED]"
+
         # ----------------------------------------------------
-        
+
         payload = {
             "on": True,
             "bri": 255, 
