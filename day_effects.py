@@ -26,8 +26,8 @@ def get_day_payload(r, g, b, pwm, clouds, base_phase_name, is_stormy=False):
         sx = 60  
         ix = 100 
         col1 = [60, 90, 130, 0]  
-        col2 = [int(r * 0.15), int(g * 0.15), int(b * 0.15), 0]  
-        pwm = max(int(pwm * 0.15), 10) # Minimum 4% fill so it isn't pitch black
+        col2 = [int(r * 0.35), int(g * 0.35), int(b * 0.35), 0]  
+        pwm = max(int(pwm * 0.35), 10) # Minimum 4% fill so it isn't pitch black
         phase_name += " [DISTANT STORM ACTIVE]"
         return phase_name, col1, col2, col3, pwm, fx, sx, ix
     
@@ -44,7 +44,7 @@ def get_day_payload(r, g, b, pwm, clouds, base_phase_name, is_stormy=False):
         col3 = [int(min(255, r * 1.3)), int(min(255, g * 1.15)), int(min(255, b * 1.00)), 0]
         
         # Add 6% PWM fill light to brighten the tank
-        pwm = max(pwm, 8) 
+        pwm = max(pwm, 15) 
         phase_name += f" [Rolling Clouds: {clouds}%]"
         
     else:
