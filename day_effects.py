@@ -72,15 +72,3 @@ def get_day_payload(r, g, b, pwm, clouds, base_phase_name, is_stormy=False):
         col3 = [int(min(255, r * 1.3)), int(min(255, g * 1.15)), int(min(255, b * 1.00)), 0]
         pwm = max(pwm, 18) 
         phase_name += f" [Rolling Clouds: {clouds}%]"
-
-    # ==========================================
-    # POWER SAVING OVERRIDE: RGB OFF if PWM > 34
-    # ==========================================
-    if pwm > 34 and not is_stormy:
-        col1 = [0, 0, 0, 0]
-        col2 = [0, 0, 0, 0]
-        col3 = [0, 0, 0, 0]
-        fx = 0  # Kill all animations
-        phase_name += " [RGB DISABLED - PWM Dominant]"
-
-    return phase_name, col1, col2, col3, pwm, fx, sx, ix, pal
