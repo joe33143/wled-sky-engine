@@ -1,5 +1,3 @@
-# night_effects.py
-
 def get_night_payload(moon_factor, clouds, is_stormy=False):
     """Generates animations and thunderstorms for the deep night phase."""
     c = clouds / 100.0
@@ -14,7 +12,7 @@ def get_night_payload(moon_factor, clouds, is_stormy=False):
     g = int(max(0, min(255, g * dim)))
     b = int(max(0, min(255, b * dim)))
 
-    if clouds >= 75:
+    if clouds >= 75 and not is_stormy:
         grey = (r + g + b) // 3
         fade = ((clouds - 75) / 25.0) * 0.7 
         r = int(r + (grey - r) * fade)
@@ -28,24 +26,28 @@ def get_night_payload(moon_factor, clouds, is_stormy=False):
     fx = 0
     sx = 128
     ix = 128
+    pal = 0
     phase_name = f"Night (Moon: {int(moon_factor * 100)}%)"
 
     if is_stormy:
-        fx = 43  
-        sx = 40  
-        ix = 100 
-        col1 = [30, 50, 80, 0]  
-        col2 = [1, 1, 2, 0]  
-        phase_name += " [DISTANT STORM ACTIVE]"
-        return phase_name, col1, col2, col3, pwm, fx, sx, ix
+        # --- THUNDER STORM PRESET ---
+        fx = 57  
+        sx = 128  
+        ix = 128 
+        pal = 9
+        col1 = [255, 255, 255, 0]  
+        col2 = [56, 56, 56, 0]  
+        phase_name += " [THUNDER STORM ACTIVE]"
+        # FIXED: Added `pal` to the end of this return statement
+        return phase_name, col1, col2, col3, pwm, fx, sx, ix, pal
 
     if clouds < 30:
-        fx = 73
-        sx = 40
-        ix = 180 
-        col2 = [255, 105, 180, 0]  
-        col3 = [138, 43, 226, 0]   
-        phase_name += " [Glitter Active]"
+        # Clean solid moonlight for clear nights
+        fx = 0
+        sx = 128
+        ix = 128 
+        pal = 0
+        phase_name += " [Clear Sky]"
     elif clouds < 75:
         fx = 38
         sx = int(20 + (c * 50))  
@@ -55,10 +57,12 @@ def get_night_payload(moon_factor, clouds, is_stormy=False):
         phase_name += f" [Rolling Clouds: {clouds}%]"
     else:
         fx = 38
-        sx = 15  # Slow crawl instead of frozen 0
+        sx = 15  
         ix = 100
         col2 = [int(r * 0.95), int(g * 0.95), int(b * 0.95), 0]
         col3 = [int(min(255, r * 1.30)), int(min(255, g * 1.15)), int(min(255, b * 1.00)), 0]
         phase_name += f" [Overcast Crawl: {clouds}%]"
         
-    return phase_name, col1, col2, col3, pwm, fx, sx, ix
+    # FIXED: Added `pal` to the end of this return statement
+    return phase_name, col1, col2, col3, pwm, fx, sx, ix, pal
+    
