@@ -241,9 +241,8 @@ def main():
             if not is_stormy:
                 progress = st - 9.0 
                 fx = 88 
-                pal = 0 # Drop palette to 0 so we can manually fade raw colors!
+                pal = 0 
                 
-                # Lerp from Cyan profile [0, 255, 200] to calculated night colors
                 col1 = [
                     int(lerp(0, calculated_col1[0], progress)),
                     int(lerp(255, calculated_col1[1], progress)),
@@ -264,9 +263,13 @@ def main():
         elif 10.5 <= st < 15.0:
             # 10:30 PM to 3 AM: Sleep Mode 
             pwm = 0
-            ceiling_bri = 0
-            fx = 0
-            phase += " [SLEEP MODE - CEILING OFF]"
+            if is_stormy:
+                ceiling_bri = 128 # Dimly run the night aurora if there is a storm
+                phase += " [SLEEP MODE - NIGHT STORM]"
+            else:
+                ceiling_bri = 0
+                fx = 0
+                phase += " [SLEEP MODE - CEILING OFF]"
 
         elif 15.0 <= st < 19.0:
             # 3 AM to 7 AM: Early Morning Reset
@@ -310,27 +313,30 @@ def main():
             pwm_ix = 200
             pwm_col1 = [255, 255, 255, 255]
             
-            # Time-based storm intensity
+            # Time-based storm intensity & background fixes
             if 10.5 <= st < 15.0:
                 pwm_bri = int(255 * 0.18)
+                storm_bg = 0 # Pitch black background at night!
             elif 7.5 <= st < 10.5 or 15.0 <= st < 19.0:
                 pwm_bri = int(255 * 0.30)
+                storm_bg = 0 # Pitch black background at night!
             else:
                 pwm_bri = 255
+                # Only use the 15% floor during daytime/evening
+                storm_bg = max(int(255 * 0.15), int(calculated_pwm * 0.50))
             
-            storm_bg = max(int(255 * 0.15), int(calculated_pwm * 0.50))
             pwm_col2 = [storm_bg, storm_bg, storm_bg, storm_bg]
 
         # ----------------------------------------------------
         
         payload = {
-            "on": True, # Global ON ensures device isn't completely sleeping
+            "on": True, 
             "bri": 255, 
             "transition": wled_transition, 
             "seg": [
                 {
                     "id": 0, 
-                    "on": ceiling_bri > 0, # EXPLICITLY hard-lock power state based on brightness
+                    "on": ceiling_bri > 0, 
                     "bri": ceiling_bri,
                     "col": [col1, col2, col3], 
                     "cct": 38,   
@@ -338,7 +344,7 @@ def main():
                 },
                 {
                     "id": 1, 
-                    "on": pwm_bri > 0, # Prevents WLED from accidentally turning this segment on!
+                    "on": pwm_bri > 0, 
                     "bri": pwm_bri, 
                     "col": [pwm_col1, pwm_col2, [0,0,0,0]], 
                     "cct": 127,  
@@ -369,4 +375,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-            
+                
