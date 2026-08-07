@@ -257,8 +257,8 @@ def main():
             # Flash color is bright white
             pwm_col1 = [255, 255, 255, 255]
             
-            # Background scales between a floor of 15% (38) and a ceiling of 50% of calculated_pwm
-            storm_bg = max(int(255 * 0.15), int(calculated_pwm * 0.50))
+            # Background scales between a floor of 15% (38) and a ceiling of 80% of calculated_pwm
+            storm_bg = max(int(255 * 0.15), int(calculated_pwm * 0.80))
             pwm_col2 = [storm_bg, storm_bg, storm_bg, storm_bg]
 
         # ----------------------------------------------------
