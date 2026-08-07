@@ -198,15 +198,22 @@ def main():
         rgb_multiplier = 1.0
         calculated_pwm = pwm
 
-        if time_float < 7.5:
-            # Midnight to 7:30 AM -> Pure RGB, PWM off
+        if time_float < 7.0:
+            # Midnight to 7:00 AM -> Pure RGB, PWM off
             pwm = 0
             rgb_multiplier = 1.0
+
+        elif 7.0 <= time_float < 7.5:
+            # 7:00 AM to 7:30 AM -> Pre-dawn PWM fill (fades up to 10)
+            progress = (time_float - 7.0) / 0.5
+            pwm = int(10 * progress)
+            rgb_multiplier = 1.0
+            phase += " [PRE-DAWN PWM FILL]"
 
         elif 7.5 <= time_float < 8.0:
             # 7:30 to 8:00 AM -> Morning Crossfade
             progress = (time_float - 7.5) / 0.5 
-            pwm = int(calculated_pwm * progress)
+            pwm = int(10 + (calculated_pwm - 10) * progress)
             rgb_multiplier = 1.0 - progress
             wled_transition = 200 
             phase += " [MORNING HANDOFF]"
@@ -218,7 +225,6 @@ def main():
                 pwm = min(calculated_pwm, 18) 
                 rgb_multiplier = 1.0
                 phase += " [DAYTIME CLOUDS - RGB Active]"
-                # Notice we are NO LONGER setting fx = 0 here! Your effect will live!
             else:
                 # Clear Day -> Save power, pure PWM.
                 pwm = calculated_pwm
