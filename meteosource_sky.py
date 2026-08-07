@@ -197,8 +197,7 @@ def main():
 
         elif 8.0 <= time_float < 17.0:
             if is_stormy:
-                # Dim the PWM fill light so the flashes pop
-                pwm = max(int(calculated_pwm * 0.4), 18) 
+                pwm = calculated_pwm 
                 rgb_multiplier = 1.0
                 phase += " [DAYTIME STORM - RGB Active]"
             elif clouds >= 30:
@@ -257,8 +256,10 @@ def main():
             pwm_ix = 200
             # Flash color is bright white
             pwm_col1 = [255, 255, 255, 255]
-            # Background color is the dimmed PWM fill we calculated above
-            pwm_col2 = [pwm, pwm, pwm, pwm]
+            
+            # Background scales between a floor of 15% (38) and a ceiling of 50% of calculated_pwm
+            storm_bg = max(int(255 * 0.15), int(calculated_pwm * 0.50))
+            pwm_col2 = [storm_bg, storm_bg, storm_bg, storm_bg]
 
         # ----------------------------------------------------
         
@@ -303,4 +304,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-            
+    
