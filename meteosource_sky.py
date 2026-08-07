@@ -221,8 +221,9 @@ def main():
         elif 8.0 <= time_float < 17.0:
             # 8:00 AM to 5:00 PM -> Daytime Condition Check
             if clouds >= 30 and not is_stormy:
-                # It is cloudy! Leave RGB effect running, cap PWM so it doesn't wash out.
-                pwm = min(calculated_pwm, 18) 
+                # It is cloudy! Leave RGB effect running, but let the PWM scale up 
+                # naturally so the room actually gets bright.
+                pwm = calculated_pwm 
                 rgb_multiplier = 1.0
                 phase += " [DAYTIME CLOUDS - RGB Active]"
             else:
@@ -230,7 +231,7 @@ def main():
                 pwm = calculated_pwm
                 rgb_multiplier = 0.0
                 if not is_stormy:
-                    fx = 0  # Only shut the effect off if it's a clear day
+                    fx = 0  
                     phase += " [MAIN RGB OFF - Clear Sky]"
 
         elif 17.0 <= time_float < 18.0:
