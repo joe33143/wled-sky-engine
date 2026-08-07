@@ -25,7 +25,7 @@ def get_day_payload(r, g, b, pwm, clouds, base_phase_name, is_stormy=False):
         pal = 0  
         col2 = [int(r * 0.8), int(g * 0.8), int(b * 0.8), 0]
         col3 = [int(min(255, r * 1.3)), int(min(255, g * 1.3)), int(min(255, b * 1.3)), 0]
-        pwm = max(pwm, 18)
+        pwm = max(pwm, 30)
         phase_name += " [THUNDER STORM ACTIVE]" if is_stormy else f" [Rainy / Overcast: {clouds}%]"
         
     elif base_phase_name == "Low Sun / Horizon" and clouds < 30:
