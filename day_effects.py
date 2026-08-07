@@ -40,7 +40,7 @@ def get_day_payload(r, g, b, pwm, clouds, base_phase_name, is_stormy=False):
         col1 = [r_boost, g_boost, b_boost, 0]
         col2 = [int(r_boost * 0.6), int(g_boost * 0.5), int(b_boost * 0.5), 0]
         col3 = [int(r_boost * 0.9), int(g_boost * 0.5), 0, 0] 
-        pwm = max(pwm, 18)
+        pwm = max(pwm, 30)
         phase_name += " [Dynamic Evening Preset]"
         
     elif clouds < 30:
