@@ -30,19 +30,21 @@ def get_night_payload(moon_factor, clouds, is_stormy=False):
     phase_name = f"Night (Moon: {int(moon_factor * 100)}%)"
 
     if is_stormy:
-        # --- THUNDER STORM PRESET ---
+        # --- CALCULATED NIGHT STORM ---
         fx = 57  
-        sx = 128  
-        ix = 128 
-        pal = 9
-        col1 = [255, 255, 255, 0]  
-        col2 = [56, 56, 56, 0]  
+        sx = 220  
+        ix = 200 
+        pal = 0
+        
+        # Flash color (bright nighttime moon highlight)
+        col1 = [min(255, int(r * 4.0)), min(255, int(g * 4.0)), min(255, int(b * 4.0)), 0]  
+        # Background (very dark night color)
+        col2 = [int(r * 0.2), int(g * 0.2), int(b * 0.2), 0]  
+        
         phase_name += " [THUNDER STORM ACTIVE]"
-        # FIXED: Added `pal` to the end of this return statement
         return phase_name, col1, col2, col3, pwm, fx, sx, ix, pal
 
     if clouds < 30:
-        # Clean solid moonlight for clear nights
         fx = 0
         sx = 128
         ix = 128 
@@ -63,6 +65,5 @@ def get_night_payload(moon_factor, clouds, is_stormy=False):
         col3 = [int(min(255, r * 1.30)), int(min(255, g * 1.15)), int(min(255, b * 1.00)), 0]
         phase_name += f" [Overcast Crawl: {clouds}%]"
         
-    # FIXED: Added `pal` to the end of this return statement
     return phase_name, col1, col2, col3, pwm, fx, sx, ix, pal
     
