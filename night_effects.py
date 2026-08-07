@@ -29,9 +29,10 @@ def get_night_payload(moon_factor, clouds, is_stormy=False):
     phase_name = f"Night (Moon: {int(moon_factor * 100)}%)"
 
     if is_stormy or clouds >= 75:
-        fx = 88 
-        sx = 40 if is_stormy else 25 
-        ix = 150
+        # --- RESTORED TO FX 38 (AURORA/CLOUDS) ---
+        fx = 38 
+        sx = 40 if is_stormy else 15 
+        ix = 100
         col2 = [int(r * 0.95), int(g * 0.95), int(b * 0.95), 0]
         col3 = [int(min(255, r * 1.30)), int(min(255, g * 1.15)), int(min(255, b * 1.00)), 0]
         phase_name += " [THUNDER STORM ACTIVE]" if is_stormy else f" [Overcast: {clouds}%]"
@@ -43,6 +44,7 @@ def get_night_payload(moon_factor, clouds, is_stormy=False):
         pal = 0
         phase_name += " [Clear Sky]"
     else:
+        # --- RESTORED TO FX 38 (AURORA/CLOUDS) ---
         fx = 38
         sx = int(20 + (c * 50))  
         ix = 100
@@ -51,4 +53,3 @@ def get_night_payload(moon_factor, clouds, is_stormy=False):
         phase_name += f" [Rolling Clouds: {clouds}%]"
         
     return phase_name, col1, col2, col3, pwm, fx, sx, ix, pal
-    
