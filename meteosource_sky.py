@@ -299,19 +299,19 @@ def main():
             pwm_sx = 220
             pwm_ix = 200
             
-            # Time-based storm intensity adjusts the FLASH COLOR instead of segment brightness
             if 10.5 <= st < 15.0:
-                flash_lvl = int(255 * 0.18) # 18% flashes (45)
+                flash_lvl = int(255 * 0.18) # 18% flashes
                 storm_bg = 0
             elif 7.5 <= st < 10.5 or 15.0 <= st < 19.0:
-                flash_lvl = int(255 * 0.30) # 30% flashes (76)
+                flash_lvl = int(255 * 0.30) # 30% flashes
                 storm_bg = 0 
             else:
                 flash_lvl = 255 # 100% violent flashes
                 storm_bg = max(int(255 * 0.15), int(calculated_pwm * 0.50))
             
-            pwm_col1 = [flash_lvl, flash_lvl, flash_lvl, flash_lvl]
-            pwm_col2 = [storm_bg, storm_bg, storm_bg, storm_bg]
+            # FIXED: Primary (col1) is the background. Secondary (col2) is the flash.
+            pwm_col1 = [storm_bg, storm_bg, storm_bg, storm_bg]
+            pwm_col2 = [flash_lvl, flash_lvl, flash_lvl, flash_lvl]
 
         # ----------------------------------------------------
         
@@ -361,3 +361,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+    
