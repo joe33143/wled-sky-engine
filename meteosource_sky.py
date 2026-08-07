@@ -13,7 +13,6 @@ import day_effects
 
 # --- GLOBALS & CONFIG ---
 METEOSOURCE_API_KEY = os.getenv("METEOSOURCE_API_KEY")
-
 MQTT_BROKER = "broker.hivemq.com"
 MQTT_PORT = 1883
 MQTT_TOPIC = "joe33143/wled-sky/api"
@@ -27,16 +26,13 @@ def get_saturated_color(rgb_list):
     r, g, b = rgb_list[0], rgb_list[1], rgb_list[2]
     if r == 0 and g == 0 and b == 0:
         return [0, 0, 0, 0]
-    
     mn = min(r, g, b)
     mx = max(r, g, b)
     if mx == mn: 
         return [255, 255, 255, 0] 
-    
     r_sat = int((r - mn) * 255 / (mx - mn))
     g_sat = int((g - mn) * 255 / (mx - mn))
     b_sat = int((b - mn) * 255 / (mx - mn))
-    
     return [r_sat, g_sat, b_sat, 0]
 
 def get_moon_illumination():
@@ -51,7 +47,6 @@ def get_weather_and_turbidity():
     clouds = 0
     turbidity = 5.0
     is_stormy = False
-    
     if not METEOSOURCE_API_KEY:
         return clouds, turbidity, is_stormy
 
@@ -60,7 +55,6 @@ def get_weather_and_turbidity():
         response = requests.get(weather_url, timeout=10)
         if response.status_code == 200:
             summary = response.json().get("current", {}).get("summary", "").lower()
-            
             if "thunder" in summary or "storm" in summary:
                 is_stormy = True
                 clouds = 100
@@ -72,7 +66,6 @@ def get_weather_and_turbidity():
             else: clouds = 30
     except Exception as e:
         print(f"Failed to fetch weather: {e}")
-        
     return clouds, turbidity, is_stormy
 
 def get_solar_altitude():
@@ -93,41 +86,34 @@ def calculate_base_day_colors(altitude_deg, clouds, turbidity):
         (55,  255, 250, 245, 160),  
         (90,  255, 255, 255, 200)   
     ]
-
     k1, k2 = keys[0], keys[-1]
     for i in range(len(keys) - 1):
         if keys[i][0] <= altitude_deg <= keys[i+1][0]:
             k1, k2 = keys[i], keys[i+1]
             break
-            
     if altitude_deg < keys[0][0]: k1 = k2 = keys[0]
     elif altitude_deg > keys[-1][0]: k1 = k2 = keys[-1]
 
     t = 0.0 if k2[0] == k1[0] else max(0.0, min(1.0, (altitude_deg - k1[0]) / (k2[0] - k1[0])))
-
     r = lerp(k1[1], k2[1], t)
     g = lerp(k1[2], k2[2], t)
     b = lerp(k1[3], k2[3], t)
     pwm = lerp(k1[4], k2[4], t)
 
     phase_name = "Low Sun / Horizon" if altitude_deg < 35 else "Daytime"
-
     dim = 1.0 - (c * 0.5)
     r *= dim; g *= dim; b *= dim
     r += (turbidity * 3.5); g += (turbidity * 2.5); b -= (turbidity * 1.5)
     pwm = pwm * (1.0 - (c * 0.1)) 
-
     r = int(max(0, min(255, r)))
     g = int(max(0, min(255, g)))
     b = int(max(0, min(255, b)))
     pwm = int(max(0, min(255, pwm)))
-
     return r, g, b, pwm, phase_name
 
 def main():
     client_id = f"joe33143_sky_{int(time.time())}"
     client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=client_id)
-    
     try:
         client.connect(MQTT_BROKER, MQTT_PORT, 60)
         client.loop_start() 
@@ -155,15 +141,14 @@ def main():
             phase, col1, col2, col3, pwm, fx, sx, ix, pal = day_effects.get_day_payload(r, g, b, base_pwm, clouds, base_phase, is_stormy)
 
         # ----------------------------------------------------
-        # --- VIVID BOOST (Skipped if Stormy) ---
+        # --- VIVID BOOST (Always run now) ---
         # ----------------------------------------------------
-        if not is_stormy:
-            col1 = [min(255, int(c * 1.1)) for c in col1[:3]] + [0]
-            col2 = [min(255, int(c * 1.8)) for c in col2[:3]] + [0]
-            col3 = [min(255, int(c * 1.8)) for c in col3[:3]] + [0]
+        col1 = [min(255, int(c * 1.1)) for c in col1[:3]] + [0]
+        col2 = [min(255, int(c * 1.8)) for c in col2[:3]] + [0]
+        col3 = [min(255, int(c * 1.8)) for c in col3[:3]] + [0]
 
         # ----------------------------------------------------
-        # --- EXPANSION ZONE: 6-Pixel Saturated Extension ---
+        # --- EXPANSION ZONE: Tank Saturated Extension ---
         # ----------------------------------------------------
         exp_fx = 0  
         exp_sx = 128
@@ -178,7 +163,7 @@ def main():
             exp_fx = 57  
             exp_sx = 220 
             exp_ix = 200  
-            # Tank gets the same saturated calculated colors
+            # Tank gets lightning too, but keeps saturated colors
             exp_col1 = get_saturated_color(col1)
             exp_col2 = get_saturated_color(col2)
             exp_col3 = [0, 0, 0, 0]
@@ -211,16 +196,20 @@ def main():
             phase += " [MORNING HANDOFF]"
 
         elif 8.0 <= time_float < 17.0:
-            if clouds >= 30 and not is_stormy:
+            if is_stormy:
+                # Dim the PWM fill light so the flashes pop
+                pwm = max(int(calculated_pwm * 0.4), 18) 
+                rgb_multiplier = 1.0
+                phase += " [DAYTIME STORM - RGB Active]"
+            elif clouds >= 30:
                 pwm = calculated_pwm 
                 rgb_multiplier = 1.0
                 phase += " [DAYTIME CLOUDS - RGB Active]"
             else:
                 pwm = calculated_pwm
                 rgb_multiplier = 0.0
-                if not is_stormy:
-                    fx = 0  
-                    phase += " [MAIN RGB OFF - Clear Sky]"
+                fx = 0  
+                phase += " [MAIN RGB OFF - Clear Sky]"
 
         elif 17.0 <= time_float < 18.0:
             progress = (time_float - 17.0) / 1.0
@@ -246,10 +235,30 @@ def main():
             if 21.0 <= time_float < 21.25:
                 wled_transition = 290
 
-        # Apply multiplier uniformly (effects files now handle colors natively)
+        # Apply multiplier uniformly to Main RGB
         col1 = [int(c * rgb_multiplier) for c in col1[:3]] + [0]
         col2 = [int(c * rgb_multiplier) for c in col2[:3]] + [0]
         col3 = [int(c * rgb_multiplier) for c in col3[:3]] + [0]
+
+        # ----------------------------------------------------
+        # --- SEGMENT 1 (PWM) CONFIGURATION ---
+        # ----------------------------------------------------
+        pwm_bri = pwm
+        pwm_fx = 0
+        pwm_sx = 128
+        pwm_ix = 128
+        pwm_col1 = [235, 235, 235, 235]
+        pwm_col2 = [0, 0, 0, 0]
+
+        if is_stormy:
+            pwm_bri = 255 # Max segment brightness so flashes are violent
+            pwm_fx = 57   # Lightning effect!
+            pwm_sx = 220
+            pwm_ix = 200
+            # Flash color is bright white
+            pwm_col1 = [255, 255, 255, 255]
+            # Background color is the dimmed PWM fill we calculated above
+            pwm_col2 = [pwm, pwm, pwm, pwm]
 
         # ----------------------------------------------------
         
@@ -266,10 +275,12 @@ def main():
                 },
                 {
                     "id": 1, 
-                    "bri": pwm, 
-                    "col": [[235, 235, 235, 235]], 
+                    "bri": pwm_bri, 
+                    "col": [pwm_col1, pwm_col2, [0,0,0,0]], 
                     "cct": 127,  
-                    "fx": 0 
+                    "fx": pwm_fx,
+                    "sx": pwm_sx,
+                    "ix": pwm_ix
                 },
                 {
                     "id": 2, 
@@ -292,4 +303,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-                
+            
