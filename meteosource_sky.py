@@ -264,7 +264,6 @@ def main():
         elif 10.5 <= st < 15.0:
             # 10:30 PM to 3 AM: Sleep Mode 
             pwm = 0
-            # Ceiling shuts OFF completely, even if there is a storm (Only PWM lightning fires)
             ceiling_bri = 0
             fx = 0
             phase += " [SLEEP MODE - CEILING OFF]"
@@ -313,28 +312,25 @@ def main():
             
             # Time-based storm intensity
             if 10.5 <= st < 15.0:
-                # Deep Night (10:30 PM - 3 AM): 18% Brightness Lightning
                 pwm_bri = int(255 * 0.18)
             elif 7.5 <= st < 10.5 or 15.0 <= st < 19.0:
-                # Night Time (7:30 PM - 10:30 PM, 3 AM - 7 AM): 30% Brightness Lightning
                 pwm_bri = int(255 * 0.30)
             else:
-                # Daytime: Max violent brightness
                 pwm_bri = 255
             
-            # Floor background glow to 15% (38) so it's never pure black
             storm_bg = max(int(255 * 0.15), int(calculated_pwm * 0.50))
             pwm_col2 = [storm_bg, storm_bg, storm_bg, storm_bg]
 
         # ----------------------------------------------------
         
         payload = {
-            "on": True,
+            "on": True, # Global ON ensures device isn't completely sleeping
             "bri": 255, 
             "transition": wled_transition, 
             "seg": [
                 {
                     "id": 0, 
+                    "on": ceiling_bri > 0, # EXPLICITLY hard-lock power state based on brightness
                     "bri": ceiling_bri,
                     "col": [col1, col2, col3], 
                     "cct": 38,   
@@ -342,6 +338,7 @@ def main():
                 },
                 {
                     "id": 1, 
+                    "on": pwm_bri > 0, # Prevents WLED from accidentally turning this segment on!
                     "bri": pwm_bri, 
                     "col": [pwm_col1, pwm_col2, [0,0,0,0]], 
                     "cct": 127,  
@@ -351,6 +348,7 @@ def main():
                 },
                 {
                     "id": 2, 
+                    "on": tank_bri > 0,
                     "bri": tank_bri,
                     "col": [exp_col1, exp_col2, exp_col3], 
                     "cct": 127,  
@@ -359,7 +357,7 @@ def main():
             ]
         }
         
-        print(f"[{phase}] -> FX: {fx} | Base RGB: {col1[:3]} | PWM: {pwm} | Trans: {wled_transition/10}s")
+        print(f"[{phase}] -> FX: {fx} | Base RGB: {col1[:3]} | PWM: {pwm_bri} | Trans: {wled_transition/10}s")
         publish_result = client.publish(MQTT_TOPIC, json.dumps(payload), qos=1)
         publish_result.wait_for_publish(timeout=10) 
         
@@ -371,4 +369,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-                   
+            
