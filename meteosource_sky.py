@@ -145,7 +145,6 @@ def main():
             r, g, b, base_pwm, base_phase = calculate_base_day_colors(effective_alt, clouds, turbidity)
             phase, col1, col2, col3, pwm, fx, sx, ix, pal = day_effects.get_day_payload(r, g, b, base_pwm, clouds, base_phase, is_stormy)
 
-        # Backup calculated night values for the manual crossfade
         calculated_col1 = col1.copy()
         calculated_col2 = col2.copy()
         calculated_col3 = col3.copy()
@@ -165,7 +164,6 @@ def main():
         tank_bri = 255
 
         if 7.5 <= st < 15.0:
-            # 7:30 PM to 3 AM: Lock the tank exactly to the user's profile
             exp_fx = 88
             exp_sx = 96
             exp_ix = 67
@@ -174,9 +172,8 @@ def main():
             exp_col2 = [0, 0, 0, 0]
             exp_col3 = [0, 0, 0, 0]
             if st >= 10.5:
-                tank_bri = 128 # Drop to 50% at 10:30 PM
+                tank_bri = 128 
         else:
-            # Daytime dynamic tank
             exp_col1 = get_saturated_color(col1)
             exp_col2 = get_saturated_color(col2)
             exp_col3 = get_saturated_color(col3)
@@ -198,7 +195,6 @@ def main():
         ceiling_bri = 255
 
         if st < 5.0 or st >= 20.0:
-            # Daytime logic
             if is_stormy:
                 pwm = max(int(calculated_pwm * 0.4), 18) 
             elif clouds >= 30:
@@ -210,18 +206,15 @@ def main():
                 phase += " [MAIN RGB OFF]"
 
         elif 5.0 <= st < 6.0:
-            # Evening Handoff
             progress = (st - 5.0) / 1.0
             pwm = int(calculated_pwm - ((calculated_pwm - 18) * progress))
             rgb_multiplier = progress
             wled_transition = 200
 
         elif 6.0 <= st < 7.5:
-            # Evening Hold
             pwm = max(calculated_pwm, 18)
 
         elif 7.5 <= st < 9.0:
-            # 7:30 PM to 9 PM: Lock ceiling to User Profile
             pwm = 0
             if not is_stormy:
                 fx = 88
@@ -236,13 +229,11 @@ def main():
                 phase += " [NIGHT STORM]"
 
         elif 9.0 <= st < 10.0:
-            # 9 PM to 10 PM: Smooth mathematical crossfade to Deep Night
             pwm = 0
             if not is_stormy:
                 progress = st - 9.0 
                 fx = 88 
                 pal = 0 
-                
                 col1 = [
                     int(lerp(0, calculated_col1[0], progress)),
                     int(lerp(255, calculated_col1[1], progress)),
@@ -256,15 +247,13 @@ def main():
                 phase += " [NIGHT STORM]"
 
         elif 10.0 <= st < 10.5:
-            # 10 PM to 10:30 PM: Native Deep Night
             pwm = 0
             phase += " [DEEP NIGHT]"
 
         elif 10.5 <= st < 15.0:
-            # 10:30 PM to 3 AM: Sleep Mode 
             pwm = 0
             if is_stormy:
-                ceiling_bri = 128 # Dimly run the night aurora if there is a storm
+                ceiling_bri = 128 
                 phase += " [SLEEP MODE - NIGHT STORM]"
             else:
                 ceiling_bri = 0
@@ -272,23 +261,19 @@ def main():
                 phase += " [SLEEP MODE - CEILING OFF]"
 
         elif 15.0 <= st < 19.0:
-            # 3 AM to 7 AM: Early Morning Reset
             pwm = 0
             phase += " [EARLY MORNING]"
 
         elif 19.0 <= st < 19.5:
-            # 7 AM Pre-Dawn Fill
             progress = (st - 19.0) / 0.5
             pwm = int(10 * progress)
 
         elif 19.5 <= st < 20.0:
-            # Morning Handoff
             progress = (st - 19.5) / 0.5 
             pwm = int(10 + (calculated_pwm - 10) * progress)
             rgb_multiplier = 1.0 - progress
             wled_transition = 200 
 
-        # Apply multiplier uniformly 
         if st < 7.5 or st >= 10.0:
             col1 = [int(c * rgb_multiplier) for c in col1[:3]] + [0]
             col2 = [int(c * rgb_multiplier) for c in col2[:3]] + [0]
@@ -297,34 +282,35 @@ def main():
         # ----------------------------------------------------
         # --- SEGMENT 1 (PWM) LIGHTNING LOGIC ---
         # ----------------------------------------------------
-        pwm_bri = pwm
+        pwm_bri = 0
         pwm_fx = 0
         pwm_sx = 128
         pwm_ix = 128
-        pwm_col1 = [235, 235, 235, 235]
+        pwm_col1 = [0, 0, 0, 0]
         pwm_col2 = [0, 0, 0, 0]
 
-        if pwm == 0:
-            pwm_col1 = [0, 0, 0, 0]
+        if pwm > 0 and not is_stormy:
+            pwm_bri = pwm
+            pwm_col1 = [235, 235, 235, 235]
 
         if is_stormy:
+            pwm_bri = 255 # Keep segment power full to allow lightning to strike correctly
             pwm_fx = 57   
             pwm_sx = 220
             pwm_ix = 200
-            pwm_col1 = [255, 255, 255, 255]
             
-            # Time-based storm intensity & background fixes
+            # Time-based storm intensity adjusts the FLASH COLOR instead of segment brightness
             if 10.5 <= st < 15.0:
-                pwm_bri = int(255 * 0.18)
-                storm_bg = 0 # Pitch black background at night!
+                flash_lvl = int(255 * 0.18) # 18% flashes (45)
+                storm_bg = 0
             elif 7.5 <= st < 10.5 or 15.0 <= st < 19.0:
-                pwm_bri = int(255 * 0.30)
-                storm_bg = 0 # Pitch black background at night!
+                flash_lvl = int(255 * 0.30) # 30% flashes (76)
+                storm_bg = 0 
             else:
-                pwm_bri = 255
-                # Only use the 15% floor during daytime/evening
+                flash_lvl = 255 # 100% violent flashes
                 storm_bg = max(int(255 * 0.15), int(calculated_pwm * 0.50))
             
+            pwm_col1 = [flash_lvl, flash_lvl, flash_lvl, flash_lvl]
             pwm_col2 = [storm_bg, storm_bg, storm_bg, storm_bg]
 
         # ----------------------------------------------------
@@ -375,4 +361,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-                
