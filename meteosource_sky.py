@@ -160,11 +160,13 @@ def main():
             phase, col1, col2, col3, pwm, fx, sx, ix, pal = day_effects.get_day_payload(r, g, b, base_pwm, clouds, base_phase, is_stormy)
 
         # ----------------------------------------------------
-        # --- VIVID COLOR BOOST ---
+        # --- VIVID CLOUD & AURORA BOOST ---
         # ----------------------------------------------------
-        col1 = [min(255, int(c * 1.5)) for c in col1[:3]] + [0]
-        col2 = [min(255, int(c * 1.2)) for c in col2[:3]] + [0]
-        col3 = [min(255, int(c * 1.2)) for c in col3[:3]] + [0]
+        # We boost the base sky (col1) slightly, but heavily overdrive the moving 
+        # patterns (col2, col3) to create maximum contrast and vividness for the effects.
+        col1 = [min(255, int(c * 1.1)) for c in col1[:3]] + [0]
+        col2 = [min(255, int(c * 1.8)) for c in col2[:3]] + [0]
+        col3 = [min(255, int(c * 1.8)) for c in col3[:3]] + [0]
 
         # ----------------------------------------------------
         # --- EXPANSION ZONE: 6-Pixel Saturated Extension ---
@@ -197,7 +199,7 @@ def main():
         calculated_pwm = pwm
 
         if time_float < 7.5:
-            # Midnight to 7:30 AM -> Pure RGB Dawn/Night, PWM is totally off
+            # Midnight to 7:30 AM -> Pure RGB, PWM off
             pwm = 0
             rgb_multiplier = 1.0
 
@@ -210,22 +212,23 @@ def main():
             phase += " [MORNING HANDOFF]"
 
         elif 8.0 <= time_float < 17.0:
-            # --- DAYTIME LOGIC (8:00 AM to 5:00 PM) ---
-            if clouds >= 50:
-                # CLOUDY OVERRIDE: Drop PWM to 20, let the RGB strip show the clouds/rain
-                pwm = 20
+            # 8:00 AM to 5:00 PM -> Daytime Condition Check
+            if clouds >= 30 and not is_stormy:
+                # It is cloudy! Leave RGB effect running, cap PWM so it doesn't wash out.
+                pwm = min(calculated_pwm, 18) 
                 rgb_multiplier = 1.0
-                phase += " [DAYTIME CLOUD OVERRIDE - RGB ACTIVE]"
+                phase += " [DAYTIME CLOUDS - RGB Active]"
+                # Notice we are NO LONGER setting fx = 0 here! Your effect will live!
             else:
-                # SUNNY/CLEAR: PWM Dominance, RGB sleeps
+                # Clear Day -> Save power, pure PWM.
                 pwm = calculated_pwm
                 rgb_multiplier = 0.0
                 if not is_stormy:
-                    fx = 0
-                    phase += " [MAIN RGB OFF - PWM Dominant]"
+                    fx = 0  # Only shut the effect off if it's a clear day
+                    phase += " [MAIN RGB OFF - Clear Sky]"
 
         elif 17.0 <= time_float < 18.0:
-            # 5:00 PM to 6:00 PM -> Evening Crossfade (PWM fading down to 18, RGB fading up)
+            # 5:00 PM to 6:00 PM -> Evening Crossfade
             progress = (time_float - 17.0) / 1.0
             pwm = int(calculated_pwm - ((calculated_pwm - 18) * progress))
             rgb_multiplier = progress
@@ -254,12 +257,10 @@ def main():
 
         # --- APPLY FADES & STORMS ---
         if not is_stormy:
-            # Physically dim the main ceiling RGB based on the clock multiplier
             col1 = [int(c * rgb_multiplier) for c in col1[:3]] + [0]
             col2 = [int(c * rgb_multiplier) for c in col2[:3]] + [0]
             col3 = [int(c * rgb_multiplier) for c in col3[:3]] + [0]
         else:
-            # Storm overrides time-fades so lightning is always visible!
             col1 = [255, 255, 255, 0]
             col2 = [56, 56, 56, 0]
             col3 = [0, 0, 0, 0]
