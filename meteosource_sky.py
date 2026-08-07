@@ -304,7 +304,7 @@ def main():
         if is_stormy:
             # Drop the overall segment brightness at night so lightning isn't blinding
             if adj_time >= 21.0 or adj_time < 7.0:
-                pwm_bri = 120 
+                pwm_bri = 60 
             else:
                 pwm_bri = 255 
                 
