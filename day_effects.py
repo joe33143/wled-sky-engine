@@ -18,10 +18,10 @@ def get_day_payload(r, g, b, pwm, clouds, base_phase_name, is_stormy=False):
     phase_name = base_phase_name
 
     if is_stormy or clouds >= 75:
-        # --- CLOUDY / STORMY AURORA ---
-        fx = 88
-        sx = 120 if is_stormy else 96  # slightly faster clouds during storms
-        ix = 224
+        # --- RESTORED TO FX 38 (AURORA/CLOUDS) ---
+        fx = 38
+        sx = 40 if is_stormy else 15
+        ix = 100
         pal = 0  
         col2 = [int(r * 0.8), int(g * 0.8), int(b * 0.8), 0]
         col3 = [int(min(255, r * 1.3)), int(min(255, g * 1.3)), int(min(255, b * 1.3)), 0]
@@ -29,6 +29,7 @@ def get_day_payload(r, g, b, pwm, clouds, base_phase_name, is_stormy=False):
         phase_name += " [THUNDER STORM ACTIVE]" if is_stormy else f" [Rainy / Overcast: {clouds}%]"
         
     elif base_phase_name == "Low Sun / Horizon" and clouds < 30:
+        # Kept fx 88 just for clear evening (as per your Evening preset)
         fx = 88
         sx = 68
         ix = 160
@@ -46,7 +47,8 @@ def get_day_payload(r, g, b, pwm, clouds, base_phase_name, is_stormy=False):
         phase_name += " [Clear Sky]"
         
     else:
-        fx = 88  
+        # --- RESTORED TO FX 38 (AURORA/CLOUDS) ---
+        fx = 38  
         sx = int(20 + (c * 50)) 
         ix = 100 
         pal = 0
