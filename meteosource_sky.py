@@ -130,6 +130,10 @@ def main():
         now_ist = datetime.now(ist_tz)
         time_float = now_ist.hour + (now_ist.minute / 60.0)
 
+        # Shift time so 1 AM to 5 AM are treated as 25.0 to 29.0.
+        # This allows continuous linear math without breaking at midnight.
+        adj_time = time_float if time_float >= 6.0 else time_float + 24.0
+
         effective_alt = alt
         if alt <= 0 and (16.0 <= time_float < 21.0):
             effective_alt = 0
@@ -140,30 +144,21 @@ def main():
             r, g, b, base_pwm, base_phase = calculate_base_day_colors(effective_alt, clouds, turbidity)
             phase, col1, col2, col3, pwm, fx, sx, ix, pal = day_effects.get_day_payload(r, g, b, base_pwm, clouds, base_phase, is_stormy)
 
-        # ----------------------------------------------------
-        # --- VIVID BOOST (Always run now) ---
-        # ----------------------------------------------------
+        # --- VIVID BOOST (Always run now unless overridden below) ---
         col1 = [min(255, int(c * 1.1)) for c in col1[:3]] + [0]
         col2 = [min(255, int(c * 1.8)) for c in col2[:3]] + [0]
         col3 = [min(255, int(c * 1.8)) for c in col3[:3]] + [0]
 
-        # ----------------------------------------------------
-        # --- EXPANSION ZONE: Tank Saturated Extension ---
-        # ----------------------------------------------------
-        exp_fx = 0  
-        exp_sx = 128
-        exp_ix = 128
-        exp_pal = 0
-
+        # --- BASE EXPANSION ZONE ---
+        exp_fx, exp_sx, exp_ix, exp_pal = fx, sx, ix, pal
         exp_col1 = get_saturated_color(col1)
         exp_col2 = get_saturated_color(col2)
         exp_col3 = get_saturated_color(col3)
 
         if is_stormy:
-            exp_fx = 57  
-            exp_sx = 220 
-            exp_ix = 200  
-            # Tank gets lightning too, but keeps saturated colors
+            exp_fx = 38  
+            exp_sx = 40 
+            exp_ix = 100  
             exp_col1 = get_saturated_color(col1)
             exp_col2 = get_saturated_color(col2)
             exp_col3 = [0, 0, 0, 0]
@@ -172,75 +167,132 @@ def main():
             exp_col2 = [148, 148, 148, 0]
 
         # ----------------------------------------------------
-        # --- THE CLOCK-BASED CEILING HANDOFF ---
+        # --- YOUR NIGHT PRESET VARIABLES ---
+        # ----------------------------------------------------
+        np_col1 = [0, 255, 200, 0]
+        np_col2 = [0, 0, 0, 0]
+        np_col3 = [0, 0, 0, 0]
+        np_fx, np_sx, np_ix, np_pal = 88, 96, 103, 43
+        
+        np_tank_col1 = [255, 255, 255, 0]
+        np_tank_ix = 67
+
+        # ----------------------------------------------------
+        # --- THE MASTER CLOCK ROUTER ---
         # ----------------------------------------------------
         wled_transition = 50
-        rgb_multiplier = 1.0
+        seg0_mult = 1.0
+        tank_mult = 1.0
         calculated_pwm = pwm
+        is_crossfading = False
 
-        if time_float < 7.0:
+        if adj_time < 7.0: # Midnight to 7:00 AM Catch-all
             pwm = 0
-            rgb_multiplier = 1.0
 
-        elif 7.0 <= time_float < 7.5:
-            progress = (time_float - 7.0) / 0.5
+        elif 7.0 <= adj_time < 7.5:
+            progress = (adj_time - 7.0) / 0.5
             pwm = int(10 * progress)
-            rgb_multiplier = 1.0
             phase += " [PRE-DAWN PWM FILL]"
 
-        elif 7.5 <= time_float < 8.0:
-            progress = (time_float - 7.5) / 0.5 
+        elif 7.5 <= adj_time < 8.0:
+            progress = (adj_time - 7.5) / 0.5 
             pwm = int(10 + (calculated_pwm - 10) * progress)
-            rgb_multiplier = 1.0 - progress
+            seg0_mult = 1.0 - progress
             wled_transition = 200 
             phase += " [MORNING HANDOFF]"
 
-        elif 8.0 <= time_float < 17.0:
+        elif 8.0 <= adj_time < 17.0:
             if is_stormy:
                 pwm = calculated_pwm 
-                rgb_multiplier = 1.0
                 phase += " [DAYTIME STORM - RGB Active]"
             elif clouds >= 30:
                 pwm = calculated_pwm 
-                rgb_multiplier = 1.0
                 phase += " [DAYTIME CLOUDS - RGB Active]"
             else:
                 pwm = calculated_pwm
-                rgb_multiplier = 0.0
+                seg0_mult = 0.0
                 fx = 0  
                 phase += " [MAIN RGB OFF - Clear Sky]"
 
-        elif 17.0 <= time_float < 18.0:
-            progress = (time_float - 17.0) / 1.0
+        elif 17.0 <= adj_time < 18.0:
+            progress = (adj_time - 17.0) / 1.0
             pwm = int(calculated_pwm - ((calculated_pwm - 18) * progress))
-            rgb_multiplier = progress
+            seg0_mult = progress
             wled_transition = 200
             phase += " [EVENING HANDOFF]"
 
-        elif 18.0 <= time_float < 20.0:
+        elif 18.0 <= adj_time < 19.5: # 6:00 PM to 7:30 PM
             pwm = max(calculated_pwm, 18)
-            rgb_multiplier = 1.0
+            phase += " [EVENING HOLD]"
 
-        elif 20.0 <= time_float < 21.0:
+        elif 19.5 <= adj_time < 21.0: # 7:30 PM to 9:00 PM
             pwm = 0
-            rgb_multiplier = 1.0
-            if time_float < 20.25:
-                wled_transition = 200
-            phase += " [8PM PWM OFF]"
+            if not is_stormy:
+                # Apply Night Preset Colors & FX
+                col1, col2, col3 = np_col1, np_col2, np_col3
+                fx, sx, ix, pal = np_fx, np_sx, np_ix, np_pal
+                exp_col1, exp_col2, exp_col3 = np_tank_col1, np_col2, np_col3
+                exp_fx, exp_sx, exp_ix, exp_pal = np_fx, np_sx, np_tank_ix, np_pal
+                
+                # Slowly dim both ceiling and tank down to 50%
+                progress = (adj_time - 19.5) / 1.5
+                seg0_mult = 1.0 - (progress * 0.5)
+                tank_mult = seg0_mult
+                phase += " [NIGHT PRESET DIMMING]"
 
-        else:
+        elif 21.0 <= adj_time < 22.0: # 9:00 PM to 10:00 PM
             pwm = 0
-            rgb_multiplier = 1.0
-            if 21.0 <= time_float < 21.25:
-                wled_transition = 290
+            if not is_stormy:
+                progress = (adj_time - 21.0) / 1.0
+                # Start colors at the 50% brightness they ended at 9pm
+                start_c1 = [int(c * 0.5) for c in np_col1]
+                start_exp_c1 = [int(c * 0.5) for c in np_tank_col1]
+                
+                # Crossfade math
+                col1 = [int(lerp(start_c1[i], col1[i], progress)) for i in range(3)] + [0]
+                exp_col1 = [int(lerp(start_exp_c1[i], exp_col1[i], progress)) for i in range(3)] + [0]
+                
+                # Keep effect properties until fade completes
+                fx, sx, ix, pal = np_fx, np_sx, np_ix, np_pal
+                exp_fx, exp_sx, exp_ix, exp_pal = np_fx, np_sx, np_tank_ix, np_pal
+                
+                is_crossfading = True
+                phase += " [FADING TO DEEP NIGHT]"
 
-        # Apply multiplier uniformly to Main RGB
-        col1 = [int(c * rgb_multiplier) for c in col1[:3]] + [0]
-        col2 = [int(c * rgb_multiplier) for c in col2[:3]] + [0]
-        col3 = [int(c * rgb_multiplier) for c in col3[:3]] + [0]
+        elif 22.0 <= adj_time < 22.5: # 10:00 PM to 10:30 PM
+            pwm = 0
+            phase += " [DEEP NIGHT]"
+
+        elif 22.5 <= adj_time < 27.0: # 10:30 PM to 3:00 AM
+            pwm = 0
+            if not is_stormy:
+                # Turn off ceiling RGB entirely
+                seg0_mult = 0.0
+                fx = 0
+                
+                # Keep tank ON with Night Preset at exactly 50% brightness
+                exp_col1 = [int(c * 0.5) for c in np_tank_col1]
+                exp_col2, exp_col3 = [0,0,0,0], [0,0,0,0]
+                exp_fx, exp_sx, exp_ix, exp_pal = np_fx, np_sx, np_tank_ix, np_pal
+                is_crossfading = True # skips the uniform multiplier below
+                
+                phase += " [SLEEP MODE - TANK ONLY]"
+
+        else: # 27.0 to 30.0 (3:00 AM to 6:00 AM)
+            pwm = 0
+            phase += " [DEEP NIGHT RESUMED]"
+
+        # Apply multiplier uniformly (if not already handled by custom crossfades)
+        if not is_crossfading and not is_stormy:
+            col1 = [int(c * seg0_mult) for c in col1[:3]] + [0]
+            col2 = [int(c * seg0_mult) for c in col2[:3]] + [0]
+            col3 = [int(c * seg0_mult) for c in col3[:3]] + [0]
+            exp_col1 = [int(c * tank_mult) for c in exp_col1[:3]] + [0]
+            exp_col2 = [int(c * tank_mult) for c in exp_col2[:3]] + [0]
+            exp_col3 = [int(c * tank_mult) for c in exp_col3[:3]] + [0]
 
         # ----------------------------------------------------
-        # --- SEGMENT 1 (PWM) CONFIGURATION ---
+        # --- SEGMENT 1 (PWM) LIGHTNING CONFIGURATION ---
         # ----------------------------------------------------
         pwm_bri = pwm
         pwm_fx = 0
@@ -250,15 +302,18 @@ def main():
         pwm_col2 = [0, 0, 0, 0]
 
         if is_stormy:
-            pwm_bri = 255 # Max segment brightness so flashes are violent
-            pwm_fx = 57   # Lightning effect!
+            # Drop the overall segment brightness at night so lightning isn't blinding
+            if adj_time >= 21.0 or adj_time < 7.0:
+                pwm_bri = 120 
+            else:
+                pwm_bri = 255 
+                
+            pwm_fx = 57  
             pwm_sx = 220
             pwm_ix = 200
-            # Flash color is bright white
             pwm_col1 = [255, 255, 255, 255]
             
-            # Background scales between a floor of 15% (38) and a ceiling of 80% of calculated_pwm
-            storm_bg = max(int(255 * 0.15), int(calculated_pwm * 0.80))
+            storm_bg = max(int(255 * 0.15), int(calculated_pwm * 0.50))
             pwm_col2 = [storm_bg, storm_bg, storm_bg, storm_bg]
 
         # ----------------------------------------------------
@@ -304,4 +359,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
