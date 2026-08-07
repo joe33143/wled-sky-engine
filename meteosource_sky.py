@@ -24,7 +24,6 @@ def lerp(a, b, t):
     return a + (b - a) * t
 
 def get_saturated_color(rgb_list):
-    """Pushes an RGB color to 100% saturation while keeping its hue."""
     r, g, b = rgb_list[0], rgb_list[1], rgb_list[2]
     if r == 0 and g == 0 and b == 0:
         return [0, 0, 0, 0]
@@ -86,7 +85,6 @@ def get_solar_altitude():
 
 def calculate_base_day_colors(altitude_deg, clouds, turbidity):
     c = clouds / 100.0
-
     keys = [
         (-6,   35,  45,  75,   0),  
         (0,   120, 110, 140,  18),  
@@ -142,17 +140,14 @@ def main():
         clouds, turbidity, is_stormy = get_weather_and_turbidity()
         moon = get_moon_illumination()
         
-        # --- TIME & SCHEDULE PREP ---
         ist_tz = pytz.timezone('Asia/Kolkata')
         now_ist = datetime.now(ist_tz)
         time_float = now_ist.hour + (now_ist.minute / 60.0)
 
-        # --- EVENING HOLD (Sun Freezing) ---
         effective_alt = alt
         if alt <= 0 and (16.0 <= time_float < 21.0):
             effective_alt = 0
 
-        # --- LOGIC ROUTER ---
         if effective_alt <= -6:
             phase, col1, col2, col3, pwm, fx, sx, ix, pal = night_effects.get_night_payload(moon, clouds, is_stormy)
         else:
@@ -160,13 +155,12 @@ def main():
             phase, col1, col2, col3, pwm, fx, sx, ix, pal = day_effects.get_day_payload(r, g, b, base_pwm, clouds, base_phase, is_stormy)
 
         # ----------------------------------------------------
-        # --- VIVID CLOUD & AURORA BOOST ---
+        # --- VIVID BOOST (Skipped if Stormy) ---
         # ----------------------------------------------------
-        # We boost the base sky (col1) slightly, but heavily overdrive the moving 
-        # patterns (col2, col3) to create maximum contrast and vividness for the effects.
-        col1 = [min(255, int(c * 1.1)) for c in col1[:3]] + [0]
-        col2 = [min(255, int(c * 1.8)) for c in col2[:3]] + [0]
-        col3 = [min(255, int(c * 1.8)) for c in col3[:3]] + [0]
+        if not is_stormy:
+            col1 = [min(255, int(c * 1.1)) for c in col1[:3]] + [0]
+            col2 = [min(255, int(c * 1.8)) for c in col2[:3]] + [0]
+            col3 = [min(255, int(c * 1.8)) for c in col3[:3]] + [0]
 
         # ----------------------------------------------------
         # --- EXPANSION ZONE: 6-Pixel Saturated Extension ---
@@ -182,10 +176,11 @@ def main():
 
         if is_stormy:
             exp_fx = 57  
-            exp_sx = 207 
-            exp_ix = 129  
-            exp_col1 = [106, 149, 255, 0] 
-            exp_col2 = [112, 112, 112, 0]    
+            exp_sx = 220 
+            exp_ix = 200  
+            # Tank gets the same saturated calculated colors
+            exp_col1 = get_saturated_color(col1)
+            exp_col2 = get_saturated_color(col2)
             exp_col3 = [0, 0, 0, 0]
         elif "Rainy" in phase:
             exp_col1 = [106, 149, 255, 0]
@@ -199,19 +194,16 @@ def main():
         calculated_pwm = pwm
 
         if time_float < 7.0:
-            # Midnight to 7:00 AM -> Pure RGB, PWM off
             pwm = 0
             rgb_multiplier = 1.0
 
         elif 7.0 <= time_float < 7.5:
-            # 7:00 AM to 7:30 AM -> Pre-dawn PWM fill (fades up to 10)
             progress = (time_float - 7.0) / 0.5
             pwm = int(10 * progress)
             rgb_multiplier = 1.0
             phase += " [PRE-DAWN PWM FILL]"
 
         elif 7.5 <= time_float < 8.0:
-            # 7:30 to 8:00 AM -> Morning Crossfade
             progress = (time_float - 7.5) / 0.5 
             pwm = int(10 + (calculated_pwm - 10) * progress)
             rgb_multiplier = 1.0 - progress
@@ -219,15 +211,11 @@ def main():
             phase += " [MORNING HANDOFF]"
 
         elif 8.0 <= time_float < 17.0:
-            # 8:00 AM to 5:00 PM -> Daytime Condition Check
             if clouds >= 30 and not is_stormy:
-                # It is cloudy! Leave RGB effect running, but let the PWM scale up 
-                # naturally so the room actually gets bright.
                 pwm = calculated_pwm 
                 rgb_multiplier = 1.0
                 phase += " [DAYTIME CLOUDS - RGB Active]"
             else:
-                # Clear Day -> Save power, pure PWM.
                 pwm = calculated_pwm
                 rgb_multiplier = 0.0
                 if not is_stormy:
@@ -235,7 +223,6 @@ def main():
                     phase += " [MAIN RGB OFF - Clear Sky]"
 
         elif 17.0 <= time_float < 18.0:
-            # 5:00 PM to 6:00 PM -> Evening Crossfade
             progress = (time_float - 17.0) / 1.0
             pwm = int(calculated_pwm - ((calculated_pwm - 18) * progress))
             rgb_multiplier = progress
@@ -243,12 +230,10 @@ def main():
             phase += " [EVENING HANDOFF]"
 
         elif 18.0 <= time_float < 20.0:
-            # 6:00 PM to 8:00 PM -> Evening Hold
             pwm = max(calculated_pwm, 18)
             rgb_multiplier = 1.0
 
         elif 20.0 <= time_float < 21.0:
-            # 8:00 PM to 9:00 PM -> 8 PM PWM Fadeout
             pwm = 0
             rgb_multiplier = 1.0
             if time_float < 20.25:
@@ -256,23 +241,15 @@ def main():
             phase += " [8PM PWM OFF]"
 
         else:
-            # 9:00 PM onwards -> Deep Night Drop
             pwm = 0
             rgb_multiplier = 1.0
             if 21.0 <= time_float < 21.25:
                 wled_transition = 290
 
-        # --- APPLY FADES & STORMS ---
-        if not is_stormy:
-            col1 = [int(c * rgb_multiplier) for c in col1[:3]] + [0]
-            col2 = [int(c * rgb_multiplier) for c in col2[:3]] + [0]
-            col3 = [int(c * rgb_multiplier) for c in col3[:3]] + [0]
-        else:
-            col1 = [255, 255, 255, 0]
-            col2 = [56, 56, 56, 0]
-            col3 = [0, 0, 0, 0]
-            fx = 57
-            pwm = max(pwm, 18)
+        # Apply multiplier uniformly (effects files now handle colors natively)
+        col1 = [int(c * rgb_multiplier) for c in col1[:3]] + [0]
+        col2 = [int(c * rgb_multiplier) for c in col2[:3]] + [0]
+        col3 = [int(c * rgb_multiplier) for c in col3[:3]] + [0]
 
         # ----------------------------------------------------
         
@@ -315,4 +292,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
+                
