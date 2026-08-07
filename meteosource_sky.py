@@ -116,9 +116,7 @@ def calculate_base_day_colors(altitude_deg, clouds, turbidity):
 
     dim = 1.0 - (c * 0.5)
     r *= dim; g *= dim; b *= dim
-
     r += (turbidity * 3.5); g += (turbidity * 2.5); b -= (turbidity * 1.5)
-
     pwm = pwm * (1.0 - (c * 0.1)) 
 
     r = int(max(0, min(255, r)))
@@ -149,13 +147,8 @@ def main():
         now_ist = datetime.now(ist_tz)
         time_float = now_ist.hour + (now_ist.minute / 60.0)
 
-        # ----------------------------------------------------
-        # --- EVENING HOLD & NIGHT MODE DELAY ---
-        # ----------------------------------------------------
+        # --- EVENING HOLD (Sun Freezing) ---
         effective_alt = alt
-        
-        # FREEZE the sun at the Horizon (0 degrees) from Sunset until 9:00 PM (21.0)
-        # This keeps the evening RGB preset active long after the physical sun sets.
         if alt <= 0 and (16.0 <= time_float < 21.0):
             effective_alt = 0
 
@@ -167,13 +160,11 @@ def main():
             phase, col1, col2, col3, pwm, fx, sx, ix, pal = day_effects.get_day_payload(r, g, b, base_pwm, clouds, base_phase, is_stormy)
 
         # ----------------------------------------------------
-        # --- PWM TIME OVERRIDE (Fades out at 8:00 PM) ---
+        # --- VIVID COLOR BOOST ---
         # ----------------------------------------------------
-        if 17.0 <= time_float < 20.0:
-            pwm = max(pwm, 18)
-        elif 20.0 <= time_float < 21.0:
-            # Force PWM off strictly after 8 PM (RGB stays active behind it!)
-            pwm = 0
+        col1 = [min(255, int(c * 1.5)) for c in col1[:3]] + [0]
+        col2 = [min(255, int(c * 1.2)) for c in col2[:3]] + [0]
+        col3 = [min(255, int(c * 1.2)) for c in col3[:3]] + [0]
 
         # ----------------------------------------------------
         # --- EXPANSION ZONE: 6-Pixel Saturated Extension ---
@@ -183,7 +174,6 @@ def main():
         exp_ix = 128
         exp_pal = 0
 
-        # Grab the colors for the tank bubbler BEFORE we turn the main RGB off
         exp_col1 = get_saturated_color(col1)
         exp_col2 = get_saturated_color(col2)
         exp_col3 = get_saturated_color(col3)
@@ -195,44 +185,93 @@ def main():
             exp_col1 = [106, 149, 255, 0] 
             exp_col2 = [112, 112, 112, 0]    
             exp_col3 = [0, 0, 0, 0]
-            
         elif "Rainy" in phase:
             exp_col1 = [106, 149, 255, 0]
             exp_col2 = [148, 148, 148, 0]
 
-        # ==========================================
-        # POWER SAVING OVERRIDE: MAIN RGB OFF if PWM > 34
-        # ==========================================
-        if pwm > 34 and not is_stormy:
-            col1 = [0, 0, 0, 0]
-            col2 = [0, 0, 0, 0]
-            col3 = [0, 0, 0, 0]
-            fx = 0  
-            phase += " [MAIN RGB DISABLED]"
+        # ----------------------------------------------------
+        # --- THE CLOCK-BASED CEILING HANDOFF ---
+        # ----------------------------------------------------
+        wled_transition = 50
+        rgb_multiplier = 1.0
+        calculated_pwm = pwm
 
-        # ----------------------------------------------------
-        # --- DYNAMIC WLED TRANSITION TIMERS ---
-        # ----------------------------------------------------
-        wled_transition = 50  # Base transition is now 5 seconds (50 deciseconds)
-        
-        # Exactly 8:00 PM (PWM fading to 0) -> 20 seconds
-        if 20.0 <= time_float < 20.25:
+        if time_float < 7.5:
+            # Midnight to 7:30 AM -> Pure RGB Dawn/Night, PWM is totally off
+            pwm = 0
+            rgb_multiplier = 1.0
+
+        elif 7.5 <= time_float < 8.0:
+            # 7:30 to 8:00 AM -> Morning Crossfade
+            progress = (time_float - 7.5) / 0.5 
+            pwm = int(calculated_pwm * progress)
+            rgb_multiplier = 1.0 - progress
+            wled_transition = 200 
+            phase += " [MORNING HANDOFF]"
+
+        elif 8.0 <= time_float < 17.0:
+            # --- DAYTIME LOGIC (8:00 AM to 5:00 PM) ---
+            if clouds >= 50:
+                # CLOUDY OVERRIDE: Drop PWM to 20, let the RGB strip show the clouds/rain
+                pwm = 20
+                rgb_multiplier = 1.0
+                phase += " [DAYTIME CLOUD OVERRIDE - RGB ACTIVE]"
+            else:
+                # SUNNY/CLEAR: PWM Dominance, RGB sleeps
+                pwm = calculated_pwm
+                rgb_multiplier = 0.0
+                if not is_stormy:
+                    fx = 0
+                    phase += " [MAIN RGB OFF - PWM Dominant]"
+
+        elif 17.0 <= time_float < 18.0:
+            # 5:00 PM to 6:00 PM -> Evening Crossfade (PWM fading down to 18, RGB fading up)
+            progress = (time_float - 17.0) / 1.0
+            pwm = int(calculated_pwm - ((calculated_pwm - 18) * progress))
+            rgb_multiplier = progress
             wled_transition = 200
-            
-        # Exactly 9:00 PM (Night mode transition begins) -> 29 seconds
-        elif 21.0 <= time_float < 21.25:
-            wled_transition = 290
-            
-        # Morning Dawn (Sun rising between -6 and 10 degrees) -> 20 seconds
-        elif -6 <= alt <= 10 and 4.0 <= time_float <= 9.0:
-            wled_transition = 200
+            phase += " [EVENING HANDOFF]"
+
+        elif 18.0 <= time_float < 20.0:
+            # 6:00 PM to 8:00 PM -> Evening Hold
+            pwm = max(calculated_pwm, 18)
+            rgb_multiplier = 1.0
+
+        elif 20.0 <= time_float < 21.0:
+            # 8:00 PM to 9:00 PM -> 8 PM PWM Fadeout
+            pwm = 0
+            rgb_multiplier = 1.0
+            if time_float < 20.25:
+                wled_transition = 200
+            phase += " [8PM PWM OFF]"
+
+        else:
+            # 9:00 PM onwards -> Deep Night Drop
+            pwm = 0
+            rgb_multiplier = 1.0
+            if 21.0 <= time_float < 21.25:
+                wled_transition = 290
+
+        # --- APPLY FADES & STORMS ---
+        if not is_stormy:
+            # Physically dim the main ceiling RGB based on the clock multiplier
+            col1 = [int(c * rgb_multiplier) for c in col1[:3]] + [0]
+            col2 = [int(c * rgb_multiplier) for c in col2[:3]] + [0]
+            col3 = [int(c * rgb_multiplier) for c in col3[:3]] + [0]
+        else:
+            # Storm overrides time-fades so lightning is always visible!
+            col1 = [255, 255, 255, 0]
+            col2 = [56, 56, 56, 0]
+            col3 = [0, 0, 0, 0]
+            fx = 57
+            pwm = max(pwm, 18)
 
         # ----------------------------------------------------
         
         payload = {
             "on": True,
             "bri": 255, 
-            "transition": wled_transition,  # <--- Dynamic timer applied here!
+            "transition": wled_transition, 
             "seg": [
                 {
                     "id": 0, 
@@ -268,4 +307,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-            
+    
