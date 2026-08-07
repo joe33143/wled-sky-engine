@@ -25,7 +25,7 @@ def get_day_payload(r, g, b, pwm, clouds, base_phase_name, is_stormy=False):
         pal = 0  
         col2 = [int(r * 0.8), int(g * 0.8), int(b * 0.8), 0]
         col3 = [int(min(255, r * 1.3)), int(min(255, g * 1.3)), int(min(255, b * 1.3)), 0]
-        pwm = max(pwm, 60)
+        pwm = max(pwm, 18)
         phase_name += " [THUNDER STORM ACTIVE]" if is_stormy else f" [Rainy / Overcast: {clouds}%]"
         
     elif base_phase_name == "Low Sun / Horizon" and clouds < 30:
@@ -40,7 +40,7 @@ def get_day_payload(r, g, b, pwm, clouds, base_phase_name, is_stormy=False):
         col1 = [r_boost, g_boost, b_boost, 0]
         col2 = [int(r_boost * 0.6), int(g_boost * 0.5), int(b_boost * 0.5), 0]
         col3 = [int(r_boost * 0.9), int(g_boost * 0.5), 0, 0] 
-        pwm = max(pwm, 100)
+        pwm = max(pwm, 18)
         phase_name += " [Dynamic Evening Preset]"
         
     elif clouds < 30:
@@ -54,7 +54,8 @@ def get_day_payload(r, g, b, pwm, clouds, base_phase_name, is_stormy=False):
         pal = 0
         col2 = [int(r * 0.95), int(g * 0.85), int(b * 0.70), 0]
         col3 = [int(min(255, r * 1.3)), int(min(255, g * 1.15)), int(min(255, b * 1.00)), 0]
-        pwm = max(pwm, 80) 
+        pwm = max(pwm, 18) 
         phase_name += f" [Rolling Clouds: {clouds}%]"
 
     return phase_name, col1, col2, col3, pwm, fx, sx, ix, pal
+    
