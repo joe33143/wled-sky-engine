@@ -224,7 +224,12 @@ def main():
                 col1 = [0, 255, 200, 0]
                 col2 = [0, 0, 0, 0]
                 col3 = [0, 0, 0, 0]
-                phase += " [NIGHT PROFILE]"
+                
+                # Dim the profile smoothly over the 1.5 hours to prepare for deep night
+                progress = (st - 7.5) / 1.5
+                ceiling_bri = int(lerp(200, 60, progress))
+                
+                phase += " [NIGHT PROFILE - DIMMING]"
             else:
                 phase += " [NIGHT STORM]"
 
@@ -242,6 +247,10 @@ def main():
                 ]
                 col2 = [int(lerp(0, calculated_col2[i], progress)) for i in range(3)] + [0]
                 col3 = [int(lerp(0, calculated_col3[i], progress)) for i in range(3)] + [0]
+                
+                # Fade brightness back UP to 255 so the extremely dark calculated night colors don't vanish completely
+                ceiling_bri = int(lerp(60, 255, progress))
+                
                 phase += " [FADING TO DEEP NIGHT]"
             else:
                 phase += " [NIGHT STORM]"
@@ -294,24 +303,24 @@ def main():
             pwm_col1 = [235, 235, 235, 235]
 
         if is_stormy:
-            pwm_bri = 255 # Keep segment power full to allow lightning to strike correctly
+            pwm_bri = 255 
             pwm_fx = 57   
             pwm_sx = 220
             pwm_ix = 200
             
             if 10.5 <= st < 15.0:
-                flash_lvl = int(255 * 0.18) # 18% flashes
+                flash_lvl = int(255 * 0.18) 
                 storm_bg = 0
             elif 7.5 <= st < 10.5 or 15.0 <= st < 19.0:
-                flash_lvl = int(255 * 0.30) # 30% flashes
+                flash_lvl = int(255 * 0.30) 
                 storm_bg = 0 
             else:
-                flash_lvl = 255 # 100% violent flashes
+                flash_lvl = 255 
                 storm_bg = max(int(255 * 0.15), int(calculated_pwm * 0.50))
             
-            # FIXED: Primary (col1) is the background. Secondary (col2) is the flash.
-            pwm_col1 = [storm_bg, storm_bg, storm_bg, storm_bg]
-            pwm_col2 = [flash_lvl, flash_lvl, flash_lvl, flash_lvl]
+            # WLED Lightning requires Primary (col1) for the Flash, and Secondary (col2) for the Background
+            pwm_col1 = [flash_lvl, flash_lvl, flash_lvl, flash_lvl]
+            pwm_col2 = [storm_bg, storm_bg, storm_bg, storm_bg]
 
         # ----------------------------------------------------
         
